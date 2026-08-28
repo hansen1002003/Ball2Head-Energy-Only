@@ -1,5 +1,4 @@
 import numpy as np
-
 # FIFA standard constants
 M_BALL = 0.43       # kg
 SAMPLE_RATE = 500   # Hz
