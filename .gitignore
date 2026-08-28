@@ -1,0 +1,15 @@
+# Virtual environment — ABSOLUTELY MUST IGNORE
+.venv/
+venv/
+
+# Python junk
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Large binaries/libraries
+*.dll
+*.lib
+*.so
+*.dylib
