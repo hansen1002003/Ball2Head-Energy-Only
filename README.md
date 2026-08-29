@@ -13,10 +13,18 @@ Ball2Head calculates football heading impact energy directly from smart-ball IMU
 
 ## 🧠 **How It Works**
 ### Core Physics (`src/compute_energy.py`)
-> **Universal, auditable — no black box**
-1. **Total Acceleration**: \(a_{\text{total}} = \sqrt{a_x^2 + a_y^2 + a_z^2}\)
-2. **Velocity Change**: \(\Delta v = a_{\text{total}} \cdot \Delta t\) (sampling rate = 500 Hz)
-3. **Impact Energy**: \(E = \frac{1}{2} m v^2\) — FIFA-standard ball mass \(m = 0.43\ \text{kg}\)
+Universal, auditable — no black box
+
+1. **Total Acceleration**:
+   a_total = sqrt( a_x² + a_y² + a_z² )
+
+2. **Velocity Change**:
+   Δv = a_total × Δt
+   (sampling rate = 500 Hz)
+
+3. **Impact Energy**:
+   E = ½ × m × v²
+   (FIFA‑standard ball mass m = 0.43 kg)
 
 ### Architecture
 
