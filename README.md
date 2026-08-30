@@ -1,12 +1,11 @@
 # ⚽ Ball2Head — Physics-First Impact Energy Framework
-**Pure Physics Core + Future AI Refinement • Auditable • Historical-Ready • BLE Live Stream**
+**Pure Physics Core + Future AI Refinement • Auditable • Historical-Ready**
 
 ---
 
 ## 🎯 **Project Overview**
 Ball2Head calculates football heading impact energy directly from smart-ball IMU data:
-- **Layer A (Current)**: **First-principles physics** — no training required, works on *any* historical logs
-- **Layer B (Future)**: Optional AI refinement — only for real-world minor corrections
+- **Layer A (Current)**: **First-principles physics** — no training required, works on *any* historical IMU logs
 - **Built on**: PINN methodology (Raissi et al., 2019) — physics is always the constraint, never learned
 
 ---
@@ -42,27 +41,21 @@ Start API Server
 uvicorn src.api:app --reload
 
 Endpoints:
-POST /api/calculate-energy — Manual input: {ax, ay, az}
-WS /ws/live-ball — 📡 Live Trionda ball stream
-GET /csv/download — Download full log
+POST /api/calculate-energy — Manual input: {ax, ay, az, timestamp}
 
-Run Direct Ball Streamer
-python src/ball_streamer.py
-Scans → connects → prints live energy readings.
+
+
 
 📚 Scientific References
 Raissi et al. (2019) — Physics-Informed Neural Networks framework
-Stone et al. (2016) — Smart-ball IMU validation
+Stone et al. (2016/2018) — Smart-ball IMU validation
 Goldstein (2002) — Classical mechanics derivation
 Young & Freedman (2016) — Standard constants & units
 
 
 ✅ Key Advantages
-✅ Historical-ready: Works on any existing IMU logs — no retraining
+✅ API Endpoints/Historical-ready: Works on any existing IMU logs — no retraining
 ✅ Auditable: Physics fully visible, no proprietary secrets
-✅ Safe: Automatic fallback — impossible values rejected
-✅ BLE-ready: Native support for Trionda smart ball
-✅ Future-proof: Layer B can be added later without breaking core
 
 
 
