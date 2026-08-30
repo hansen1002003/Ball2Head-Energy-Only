@@ -1,12 +1,12 @@
 # ⚽ Ball2Head — Physics-First Impact Energy Framework
-**Pure Physics Core + Future AI Refinement • Auditable • Historical-Ready**
+**Pure Physics Core • API Endpoint Ready**
 
----
+--
 
 ## 🎯 **Project Overview**
 Ball2Head calculates football heading impact energy directly from smart-ball IMU data:
 - **Layer A (Current)**: **First-principles physics** — no training required, works on *any* historical IMU logs
-- **Built on**: PINN methodology (Raissi et al., 2019) — physics is always the constraint, never learned
+- **Built on**: Layer A PINN methodology (Raissi et al., 2019) — physics is always the constraint, never learned
 
 ---
 
