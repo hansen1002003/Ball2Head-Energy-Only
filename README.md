@@ -60,11 +60,31 @@ Young & Freedman (2016) — Standard constants & units
 ✅ Key Advantages
 ✅ Historical-ready: Works on any existing IMU logs — no retraining
 ✅ Auditable: Physics fully visible, no proprietary secrets
-✅ Safe: Automatic fallback — impossible values rejected
-✅ BLE-ready: Native support for Trionda smart ball
-✅ Future-proof: Layer B can be added later without breaking core
+
 
 
 
 📄 License & Status
 Research / Academic Project — built for player welfare equity.
+Ball2Head Physics Calculator
+Copyright (c) 2026 — All Rights Reserved
+
+This software is OPEN SOURCE for INSPECTION, REVIEW, ACADEMIC, AND NON‑COMMERCIAL USE ONLY.
+
+✅ PERMITTED:
+- View, fork, study, validate code
+- Use in academic/research/educational work
+- Submit issues/improvements
+
+❌ PROHIBITED WITHOUT EXPLICIT WRITTEN PERMISSION:
+- Commercial use
+- Integration into league/club/enterprise systems
+- Deployment in production
+- Redistribution in closed‑source products
+- Any use intended for revenue or operational activity
+
+📝 TO USE COMMERCIALLY / DEPLOY:
+Contact: David Latham / Email: david.latham@penmanssolicitors.co.uk]
+Negotiate terms, contract, access, or licensing — NO USE IS AUTHORIZED until agreed.
+
+This software is provided as a scientifically validated, stateless physics instrument — no warranty.
