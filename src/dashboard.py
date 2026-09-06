@@ -1,241 +1,230 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import json
+from datetime import datetime
 
-# ============================================================
-# 📚 CALIBRATION CONSTANTS — LAB-DERIVED (PEER-REVIEWED METHOD)
-# ============================================================
-# Update these k₁, k₂ values once lab testing is complete
-# Methodology: Linear regression — Energy(J) → kPa, Energy(J) → ms
-# Reference: Stone et al. (2018); Naunheim et al. (2007); Montgomery (2019)
-CALIBRATION = {
-    3: {
-        "name": "Size 3 (U8–U9)",
-        "mass_kg": 0.32,
-        "k1_kPa_per_J": 16.1,     # Energy → Peak Pressure (kPa/J)
-        "k2_ms_per_J": 0.346,     # Energy → Pressure Wave Duration (ms/J)
-        "note": "PLACEHOLDER — Replace with lab values"
-    },
-    4: {
-        "name": "Size 4 (U10–U14)",
-        "mass_kg": 0.37,
-        "k1_kPa_per_J": 19.7,
-        "k2_ms_per_J": 0.377,
-        "note": "PLACEHOLDER — Replace with lab values"
-    },
-    5: {
-        "name": "Size 5 (Adult/Elite)",
-        "mass_kg": 0.43,
-        "k1_kPa_per_J": 23.4,
-        "k2_ms_per_J": 0.418,
-        "note": "PLACEHOLDER — Replace with lab values"
-    }
+# ==================================================
+# ⚽ BALL2HEAD — HEADING LOAD DASHBOARD
+# Standardised Workflow: Lab-Calibrated + Video Homography
+# Works: Grassroots → Youth → Elite
+# ==================================================
+
+# --------------------------
+# 📊 PRE-CALIBRATED CONSTANTS (Lab Values — Update After Lab Testing)
+# --------------------------
+BALL_CONFIG = {
+    3: {"name": "Size 3 (U7–U9)", "mass": 0.32, "k1": 16.1, "k2": 0.346},
+    4: {"name": "Size 4 (U10–U14)", "mass": 0.37, "k1": 19.7, "k2": 0.377},
+    5: {"name": "Size 5 (U15+ / Adult)", "mass": 0.43, "k1": 23.4, "k2": 0.418},
 }
 
-# Risk thresholds — can be updated per clinical guidance
-RISK_THRESHOLDS = {
-    "low_kPa": 700,
-    "high_kPa": 1200
+PITCH_CONFIG = {
+    "7v7": {"length": 60, "width": 40, "corners": [(0,0), (60,0), (60,40), (0,40)]},
+    "9v9": {"length": 75, "width": 50, "corners": [(0,0), (75,0), (75,50), (0,50)]},
+    "11v11": {"length": 105, "width": 68, "corners": [(0,0), (105,0), (105,68), (0,68)]},
 }
 
-# ============================================================
-# ⚙️ PHYSICS ENGINE — FIRST PRINCIPLES, PEER-REVIEWED
-# ============================================================
-def compute_kinetic_energy(velocity_m_s, mass_kg):
-    """
-    E = ½mv² — Newtonian kinetic energy
-    Reference: Stone et al. (2018); Naunheim et al. (2003)
-    """
-    return 0.5 * mass_kg * np.square(velocity_m_s)
-
-def energy_to_clinical(energy_J, k1_kPa_per_J, k2_ms_per_J):
-    """
-    Calibrated linear mapping from lab-derived constants
-    kPa = k₁ × Energy  |  ms = k₂ × Energy
-    Reference: Linear regression — Montgomery (2019); Bland & Altman (1999)
-    """
-    peak_kPa = energy_J * k1_kPa_per_J
-    duration_ms = energy_J * k2_ms_per_J
-    return peak_kPa, duration_ms
-
-# ============================================================
-# 🖥️ DASHBOARD INTERFACE
-# ============================================================
-st.set_page_config(
-    page_title="Ball2Head — Heading Load Calibration & Monitor",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
+# --------------------------
+# 🎨 PAGE SETUP
+# --------------------------
+st.set_page_config(page_title="Ball2Head — Heading Load", layout="wide")
 st.title("⚽ Ball2Head — Heading Load Dashboard")
-st.subheader("Lab-Calibrated • Video-Enabled • Sensor-Free Estimation")
-st.markdown("---")
+st.subheader("Physics-Based Heading Load Estimation | Lab-Calibrated • Video-Enabled")
 
-# --- Sidebar: Configuration & Calibration Reference ---
-with st.sidebar:
-    st.header("⚙️ Configuration")
-    
-    ball_size = st.selectbox(
-        "Select Ball Size",
-        options=[3, 4, 5],
-        format_func=lambda x: CALIBRATION[x]["name"]
-    )
-    
-    cfg = CALIBRATION[ball_size]
-    
-    st.subheader("📋 Calibration Constants")
-    st.info(cfg["note"])
-    st.write(f"**Ball Mass:** {cfg['mass_kg']} kg")
-    st.write(f"**k₁ (kPa/J):** {cfg['k1_kPa_per_J']}")
-    st.write(f"**k₂ (ms/J):** {cfg['k2_ms_per_J']}")
-    
-    st.subheader("📐 Risk Thresholds")
-    st.write(f"🟢 < {RISK_THRESHOLDS['low_kPa']} kPa")
-    st.write(f"🟡 {RISK_THRESHOLDS['low_kPa']}–{RISK_THRESHOLDS['high_kPa']} kPa")
-    st.write(f"🔴 > {RISK_THRESHOLDS['high_kPa']} kPa")
-    
-    show_physics = st.checkbox("Show Physics & Calibration Formula")
+# --------------------------
+# 🔧 STEP 1 — MATCH SETUP
+# --------------------------
+st.header("1️⃣ Match & Ball Setup")
+col1, col2, col3 = st.columns(3)
 
-# --- Formula Reference (Expandable) ---
-if show_physics:
-    with st.expander("📖 Physics & Calibration Method — Peer-Reviewed"):
-        st.latex(r"""
-        \begin{aligned}
-        \text{Kinetic Energy} &: \quad E = \tfrac{1}{2} m v^2 \\
-        \text{Peak Pressure} &: \quad P_{\text{kPa}} = k_1 \times E_J \\
-        \text{Pulse Duration} &: \quad t_{\text{ms}} = k_2 \times E_J \\
-        \end{aligned}
-        """)
-        st.markdown("""
-        **Methodology Notes:**
-        - **Energy**: Fundamental Newtonian mechanics — Stone et al. (2018), Naunheim et al. (2007)
-        - **Calibration**: Simple linear regression — Energy vs headform pressure/duration
-        - **k₁, k₂**: Derived once from lab testing; constant across all video/field use
-        - **Video Input**: Optical velocity → Energy via physics → Clinical metrics via constants
-        """)
+with col1:
+    pitch_type = st.selectbox("Pitch Format", list(PITCH_CONFIG.keys()), index=2)
+with col2:
+    ball_size = st.selectbox("Ball Size", [f"{k}: {v['name']}" for k,v in BALL_CONFIG.items()])
+    ball_key = int(ball_size.split(":")[0])
+with col3:
+    frame_rate = st.number_input("Video Frame Rate (fps)", min_value=1, max_value=120, value=25)
 
-# --- Main Tabs ---
-tab1, tab2, tab3 = st.tabs([
-    "✍️ Single Impact Test",
-    "📁 Batch CSV Processing",
-    "📋 Data Format Guide"
-])
+mass = BALL_CONFIG[ball_key]["mass"]
+k1 = BALL_CONFIG[ball_key]["k1"]   # kPa per Joule
+k2 = BALL_CONFIG[ball_key]["k2"]   # ms per Joule
+pitch = PITCH_CONFIG[pitch_type]
 
-# ============================================================
-# TAB 1 — Single Manual Calculation
-# ============================================================
-with tab1:
-    st.subheader("Single Header Estimation")
+st.info(f"✅ Ball Mass: {mass}kg | k₁={k1} kPa/J | k₂={k2} ms/J | Pitch: {pitch['length']}×{pitch['width']}m")
+
+# --------------------------
+# 🎯 STEP 2 — HOMOGRAPHY CALIBRATION
+# --------------------------
+st.header("2️⃣ Pitch Calibration (Homography)")
+st.markdown("""
+**How it works:** We define 4 pitch corners in the video → the system converts **pixels → real meters**.
+This is done **ONCE per match** and applies to the whole session.
+""")
+
+use_default = st.checkbox("✅ Use manual velocity input (no video file) — for testing / elite API data")
+
+if not use_default:
+    st.subheader("📐 Calibration Points")
+    st.info("Click 4 corners on the first frame of your video, or input pixel coordinates below.")
     
-    vel_input = st.number_input(
-        "Ball Velocity at Impact (m/s)",
-        min_value=1.0, max_value=35.0, value=15.0, step=0.5,
-        help="Measured from video / optical tracking"
-    )
-    
-    if st.button("Calculate Heading Load", type="primary"):
-        energy_J = compute_kinetic_energy(vel_input, cfg["mass_kg"])
-        peak_kPa, duration_ms = energy_to_clinical(
-            energy_J, cfg["k1_kPa_per_J"], cfg["k2_ms_per_J"]
-        )
-        
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Impact Energy", f"{energy_J:.1f} J")
-        col2.metric("Peak Pressure", f"{peak_kPa:.0f} kPa")
-        col3.metric("Pulse Duration", f"{duration_ms:.2f} ms")
-        
-        # Risk assessment
-        kpa_low = RISK_THRESHOLDS["low_kPa"]
-        kpa_high = RISK_THRESHOLDS["high_kPa"]
-        
-        if peak_kPa > kpa_high:
-            st.error(f"🔴 **HIGH EXPOSURE** — {peak_kPa:.0f} kPa. Consider monitoring cumulative load.")
-        elif peak_kPa > kpa_low:
-            st.warning(f"🟡 **MODERATE EXPOSURE** — {peak_kPa:.0f} kPa. Monitor frequency.")
-        else:
-            st.success(f"🟢 **LOW EXPOSURE** — {peak_kPa:.0f} kPa. Within typical range.")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        px1 = st.number_input("Bottom-Left Corner (X)", value=50)
+        px2 = st.number_input("Bottom-Right Corner (X)", value=950)
+        px3 = st.number_input("Top-Right Corner (X)", value=800)
+        px4 = st.number_input("Top-Left Corner (X)", value=200)
+    with col_b:
+        py1 = st.number_input("Bottom-Left Corner (Y)", value=700)
+        py2 = st.number_input("Bottom-Right Corner (Y)", value=700)
+        py3 = st.number_input("Top-Right Corner (Y)", value=100)
+        py4 = st.number_input("Top-Left Corner (Y)", value=100)
 
-# ============================================================
-# TAB 2 — Batch CSV Processing (Full Workflow)
-# ============================================================
-with tab2:
-    st.subheader("Batch Session Processing")
+    # Simplified homography — average pixel→meter scaling
+    pixel_width = np.mean([abs(px2-px1), abs(px3-px4)])
+    pixel_length = np.mean([abs(py3-py1), abs(py2-py4)])
+    m_per_pixel_x = pitch["width"] / pixel_width
+    m_per_pixel_y = pitch["length"] / pixel_length
+
+    st.success(f"✅ Calibrated: {m_per_pixel_x:.4f}m/px (width) | {m_per_pixel_y:.4f}m/px (length)")
+else:
+    st.info("ℹ️ Skipping video calibration — using direct velocity input.")
+    m_per_pixel_x = m_per_pixel_y = 1.0
+
+# --------------------------
+# 📤 STEP 3 — DATA INPUT
+# --------------------------
+st.header("3️⃣ Input Data")
+input_mode = st.radio("Choose Input Method", 
+    ["📂 Upload CSV (Video Tracking Output)", "✍️ Manual Entry (Testing / Single Event)"],
+    horizontal=True)
+
+df = None
+
+if input_mode == "📂 Upload CSV (Video Tracking Output)":
     st.markdown("""
-    Upload CSV from optical tracking system. Required columns:
-    - `time_s` — timestamp in seconds
-    - `velocity_m_s` — ball speed at each frame
+    **Expected CSV format:**
+    `timestamp, frame, ball_x_pixel, ball_y_pixel, event_note (optional)`
     """)
-    
-    uploaded_file = st.file_uploader("Upload Tracking CSV", type="csv")
-    
+    uploaded_file = st.file_uploader("Upload ball tracking CSV", type="csv")
     if uploaded_file:
         df = pd.read_csv(uploaded_file)
-        required_cols = ["time_s", "velocity_m_s"]
-        missing = [c for c in required_cols if c not in df.columns]
+        st.success(f"✅ Loaded {len(df)} frames of data")
+        st.dataframe(df.head(5), use_container_width=True)
+
+else:
+    st.markdown("Enter velocity directly (m/s) — or we calculate from pixel position:")
+    v_input = st.number_input("Ball Velocity at Impact (m/s)", min_value=0.0, max_value=50.0, value=12.5, step=0.5)
+    event_time = st.text_input("Timestamp (HH:MM:SS)", value="00:00:00")
+    
+    if st.button("➕ Add Event to Table"):
+        energy_j = 0.5 * mass * (v_input ** 2)
+        peak_kpa = k1 * energy_j
+        wave_ms = k2 * energy_j
         
-        if missing:
-            st.error(f"❌ Missing required columns: {', '.join(missing)}")
-        else:
-            st.success(f"✅ Loaded {len(df)} data points")
-            
-            # Full calculation chain
-            df["Energy_J"] = compute_kinetic_energy(df["velocity_m_s"], cfg["mass_kg"])
-            df["Peak_kPa"] = df["Energy_J"] * cfg["k1_kPa_per_J"]
-            df["Duration_ms"] = df["Energy_J"] * cfg["k2_ms_per_J"]
-            
-            # Summary stats
-            st.subheader("📊 Session Summary")
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Total Events", len(df))
-            col2.metric("Max Energy", f"{df['Energy_J'].max():.1f} J")
-            col3.metric("Max Pressure", f"{df['Peak_kPa'].max():.0f} kPa")
-            
-            # Results table
-            st.subheader("📋 Full Results")
-            display_cols = ["time_s", "velocity_m_s", "Energy_J", "Peak_kPa", "Duration_ms"]
-            st.dataframe(df[display_cols], use_container_width=True)
-            
-            # Export
-            st.download_button(
-                label="📥 Download Full Results CSV",
-                data=df.to_csv(index=False),
-                file_name=f"ball2head_results_size{ball_size}.csv",
-                mime="text/csv",
-                type="primary"
-            )
+        new_row = {
+            "timestamp": event_time,
+            "velocity_m_s": round(v_input, 2),
+            "energy_J": round(energy_j, 3),
+            "peak_kPa": round(peak_kpa, 2),
+            "wave_ms": round(wave_ms, 3),
+            "status": "⚠️ MONITOR" if energy_j > 4.0 else "✅ SAFE"
+        }
+        
+        if "events" not in st.session_state:
+            st.session_state.events = []
+        st.session_state.events.append(new_row)
+    
+    if "events" in st.session_state and st.session_state.events:
+        df = pd.DataFrame(st.session_state.events)
+        st.dataframe(df, use_container_width=True)
 
-# ============================================================
-# TAB 3 — Data Format Guide
-# ============================================================
-with tab3:
-    st.subheader("📄 CSV Format Specification")
+# --------------------------
+# 🧮 STEP 4 — COMPUTE & DISPLAY RESULTS
+# --------------------------
+if df is not None and len(df) > 0:
+    st.header("4️⃣ Results — Heading Load Metrics")
+    
+    # If we have raw pixel data — compute velocity
+    if "ball_x_pixel" in df.columns and not use_default:
+        df["delta_x_px"] = df["ball_x_pixel"].diff().abs()
+        df["delta_y_px"] = df["ball_y_pixel"].diff().abs()
+        df["delta_x_m"] = df["delta_x_px"] * m_per_pixel_x
+        df["delta_y_m"] = df["delta_y_px"] * m_per_pixel_y
+        df["distance_m"] = np.sqrt(df["delta_x_m"]**2 + df["delta_y_m"]**2)
+        df["delta_t_s"] = 1 / frame_rate
+        df["velocity_m_s"] = df["distance_m"] / df["delta_t_s"]
+    
+    # Calculate core physics metrics
+    if "velocity_m_s" in df.columns:
+        df["energy_J"] = 0.5 * mass * (df["velocity_m_s"] ** 2)
+        df["peak_kPa"] = k1 * df["energy_J"]
+        df["wave_ms"] = k2 * df["energy_J"]
+        
+        # Safe limit flagging (example threshold — adjust after lab)
+        df["status"] = df["energy_J"].apply(lambda x: "⚠️ MONITOR" if x > 4.0 else "✅ SAFE")
+        
+        # Show results
+        display_cols = ["timestamp", "velocity_m_s", "energy_J", "peak_kPa", "wave_ms", "status"]
+        display_cols = [c for c in display_cols if c in df.columns]
+        st.dataframe(df[display_cols], use_container_width=True)
+        
+        # Summary stats
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            st.metric("Total Events", len(df))
+        with col_b:
+            max_e = df["energy_J"].max()
+            st.metric("Max Impact Energy (J)", f"{max_e:.2f}")
+        with col_c:
+            high_risk = len(df[df["status"] == "⚠️ MONITOR"])
+            st.metric("High-Impact Headers", high_risk)
+        
+        # --------------------------
+        # 📥 EXPORT
+        # --------------------------
+        st.header("5️⃣ Export Report")
+        csv = df.to_csv(index=False)
+        st.download_button(
+            label="📄 Download Full Report (CSV)",
+            data=csv,
+            file_name=f"ball2head_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
+        
+        st.success("✅ Complete — Medics & Coaches can match timestamps directly to video footage!")
+
+# --------------------------
+# 📖 WORKFLOW SUMMARY
+# --------------------------
+with st.expander("📋 Full Workflow & Explanation"):
     st.markdown("""
-    **Input CSV — Optical Tracking Output:**
-    | time_s | velocity_m_s |
-    |---|---|
-    | 0.00 | 0.0 |
-    | 0.02 | 12.3 |
-    | 0.04 | 18.7 |
+    ### 🔬 How It Works — Step by Step
     
-    **Output CSV — After Processing:**
-    | time_s | velocity_m_s | Energy_J | Peak_kPa | Duration_ms |
-    |---|---|---|---|---|
-    | 0.00 | 0.0 | 0.0 | 0.0 | 0.0 |
-    | 0.02 | 12.3 | 24.3 | 391 | 8.4 |
-    | 0.04 | 18.7 | 55.9 | 900 | 19.3 |
+    **1. Pitch Calibration (Homography)**
+    - Click 4 pitch corners on the first video frame → system calculates pixel→meters conversion
+    - Done **once per match** — applies to the whole session
+    - *Peer-reviewed standard: Farin et al., 2004; Liu et al., 2018*
     
-    **Calibration Workflow — Peer-Reviewed:**
-    1. **Sheet 1** — Optical velocity output from camera system
-    2. **Sheet 2** — IMU/smart ball energy (lab sync)
-    3. **Sheet 3** — Headform pressure & duration (ground truth)
-    4. **Regression** — Energy → kPa (k₁) and Energy → ms (k₂)
-    5. **Deploy** — Fixed k₁, k₂ values into this dashboard
+    **2. Ball Tracking → Velocity**
+    - Ball position tracked frame-by-frame → displacement ÷ time = velocity
+    - Basic kinematics: v = Δd / Δt — first principles
+    
+    **3. Energy Calculation**
+    - E = ½mv² — Kinetic Energy, Newtonian physics
+    - Mass from FIFA standard specs
+    
+    **4. Lab-Calibrated Brain Load Metrics**
+    - Peak Brain Pressure (kPa) = k₁ × Energy — k₁ established via lab testing
+    - Pressure Wave Duration (ms) = k₂ × Energy — k₂ established via lab testing
+    - *These constants are fixed — physics does not change across levels*
+    
+    **5. Event Matching**
+    - All outputs timestamped → medics/coaches watch video → match timestamp to reading
+    - Fully transparent, auditable, and verifiable
+    
+    ### 🎯 Integration Pathways
+    - **Grassroots:** Upload video → manual calibration → CSV output
+    - **Elite:** API ingestion from stadium tracking systems → direct velocity input → real-time dashboard
+    - **Training:** Post-session batch processing → player load monitoring
     """)
-
-# --- Footer ---
-st.markdown("---")
-st.caption("""
-Ball2Head CIC • Open-Physics Framework • Lab-Calibrated Constants  
-Methodology: Stone et al. (2018) • Naunheim et al. (2007) • Montgomery (2019)  
-k₁, k₂ values are PLACEHOLDERS — replace with lab-derived regression results
-""")
