@@ -1,172 +1,138 @@
-# ⚽ Ball2Head CIC — Heading Load API
+# ⚽ Ball2Head — Unified Heading Exposure Calculator & Brain Health Ledger
 
-> **Physics-based impact energy → calibrated brain-load metrics.**
-> Peer-reviewed. Lab-validated. Production-ready.
-
----
-
-## 📋 Overview
-
-Ball2Head provides a standardised API for calculating heading impact load in football. Two input pathways — **one unified metric**. Built on peer-reviewed biomechanical research and Newtonian kinetic energy principles.
-
-- ✅ **Velocity endpoint** → for stadium tracking, Hawk-Eye, Kinexon, broadcasters
-- ✅ **Acceleration endpoint** → for smart balls, IMU sensors, Trionda devices
-- ✅ **Same output format** → Energy (J) today → kPa/ms after lab calibration
-- ✅ **No new hardware** → integrates with EXISTING infrastructure
+> **Peer-reviewed, open-source framework for estimating heading load in football.**  
+> Built on research from Phillips et al. (2026), Zhang et al. (2013), Caccese et al. (2018), Naunheim et al. (2003).  
+> 🟢 **Live App:** [ball2head.streamlit.app](https://ball2head.streamlit.app)
 
 ---
 
-## 🔧 Base URL
-http://localhost:8000/api/v1
-
-
-> Deployed production URL will be provided upon licence activation.
+## 📋 Table of Contents
+- [Overview](#-overview)
+- [Key Features](#-key-features)
+- [Quick Start](#-quick-start)
+- [How It Works](#-how-it-works)
+- [Calibration & Science](#-calibration--science)
+- [Risk Thresholds](#-risk-thresholds)
+- [Data Format](#-batch-csv-format)
+- [Local Development](#-local-development)
+- [References](#-references)
+- [License](#-license)
 
 ---
 
-## 🔐 Authentication
+## 🌟 Overview
 
-All endpoints require an API key in the request header:
+**Ball2Head** provides a standardized, peer-reviewed method to convert ball velocity, impact force, or IMU acceleration into clinically meaningful metrics:
+- **Kinetic Energy (J)** — Energy transferred at impact
+- **Peak Intracranial Pressure (kPa)** — Estimated brain pressure
+- **Pressure Wave Duration (ms)** — Impact loading duration
+- **Peak Linear Acceleration (g)** — Head acceleration magnitude
 
-```http
-X-API-Key: your-licence-api-key
+All calculations are **auditable, timestamped, and exportable** — built for player welfare research and clinical monitoring.
 
-Keys issued per licence tier — broadcast, medic, elite, or developer.
+---
 
+## ✨ Key Features
 
-📡 Endpoints
-✅ POST /calculate-from-velocity — PREFERRED
-For: Broadcasters, production trucks, stadium tracking systems
-Input: timestamp + ball velocity at impact — data you ALREADY capture.
+| Feature | Description |
+|---|---|
+| 🧮 **Single Calculation** | Instant metric conversion from velocity, force, or acceleration |
+| 📁 **Batch CSV Upload** | Process hundreds of events in one upload |
+| 📋 **History & Download** | Save all results → export CSV → plot in Excel |
+| 👤 **Age & Gender Adjustment** | Ball size + biomechanical factors built-in |
+| 📊 **Peer-Reviewed Calibration** | Linear regression R² > 0.999 (Phillips et al., 2026) |
+| 🔒 **Local-First Data** | No server storage — compliant with GDPR & data protection |
+| 📱 **Fully Responsive** | Works on desktop, tablet, and mobile |
 
+---
 
-Request
-{
-  "timestamp": "2026-09-08T14:30:22.120Z",
-  "velocity_m_s": 14.2,
-  "ball_size": 5
-}
+## 🚀 Quick Start
 
+### 🟢 Use Online (Recommended)
+**👉 [ball2head.streamlit.app](https://ball2head.streamlit.app)** — No installation needed!
 
-Field	Type	Required	Min	Max	Description
-timestamp	String	✅	—	—	ISO 8601 or match clock timestamp
-velocity_m_s	Float	✅	0	50	Ball velocity at impact in metres per second
-ball_size	Integer	✅	3	5	Ball size: 3 (U7–U9), 4 (U10–U14), 5 (FIFA Standard)
+### 💻 Run Locally
+```bash
+# Clone the repo
+git clone https://github.com/hansen1002003/Ball2Head-Energy-Only.git
+cd Ball2Head-Energy-Only
 
-Response
-{
-  "timestamp": "2026-09-08T14:30:22.120Z",
-  "energy_J": 4.32,
-  "peak_kPa": 23.4,
-  "wave_ms": 0.418,
-  "status": "MONITOR",
-  "ball_size": 5,
-  "calibration_note": "k1=23.4 kPa/J, k2=0.418 ms/J — pending lab calibration"
-}
+# Install dependencies
+pip install -r requirements.txt
 
+# Launch the app
+streamlit run src/main.py
 
-✅ POST /calculate-from-acceleration — IMU / Smart Ball
-For: Trionda, 3-axis accelerometer, smart ball sensors
-Input: raw acceleration from onboard IMU — API computes velocity change internally.
+🧠 How It Works
+Input Methods
+Ball Velocity (km/h, m/s, mph, ft/s) — simplest & most widely available
+Peak Impact Force (kN, N, lbf) — from load cells or sensor data
+IMU 3D Acceleration (g, m/s²) — from in-ball or head-mounted sensors
 
-Request
-{
-  "timestamp": "2026-09-08T14:30:22.120Z",
-  "ax": 185.5,
-  "ay": -42.3,
-  "az": 92.1,
-}
-
-Field	Type	Required	Description
-timestamp	String	✅	ISO 8601 or match clock timestamp
-ax	Float	✅	X-axis acceleration in m/s²
-ay	Float	✅	Y-axis acceleration in m/s²
-az	Float	✅	Z-axis acceleration in m/s²
-ball_size	Integer	✅	Ball size: 3, 4, or 5
-
-Response
-Identical format to velocity endpoint — same fields, same units.
-✅ GET /health — Service Status
-{
-  "status": "online",
-  "calibration": "k1=23.4 kPa/J, k2=0.418 ms/J",
-  "ready_for_broadcast": true
-}
-
-📤 Response Field Reference
-Field	Unit	Status	Description
-energy_J	Joules	✅ FINAL	Pure physics — E = ½mv². Ready today. NEVER CHANGES.
-peak_kPa	kPa	⏳ PENDING LAB	Peak intracranial pressure = k₁ × Energy. Values update after calibration.
-wave_ms	ms	⏳ PENDING LAB	Pressure wave duration = k₂ × Energy. Values update after calibration.
-status	—	✅ Active	SAFE (<4J) · MONITOR (4–7J) · ELEVATED (>7J)
-ball_size	—	✅ Echoed	Ball size used for mass calculation
-calibration_note	—	✅ Info	Current k₁/k₂ values — indicates lab status
+Output Metrics
+Metric	Unit	Description
+Energy	Joules (J)	Kinetic energy transferred to the head
+Peak Pressure	kPa	Estimated intracranial pressure
+Wave Duration	ms	Pressure wave propagation time
+Peak Linear Acceleration	g	Resultant head acceleration
+Risk Level	—	Colour-coded exposure classification
 
 
-⚙️ Ball Mass Specifications
-Size	Mass (kg)	Standard
-3	0.32	FIFA Youth / U9
-4	0.37	FIFA Youth / U14
-5	0.43	FIFA Standard / Adult
+🔬 Calibration & Science
+Ball Size Constants
+Ball Size	Age Group	Mass (kg)	k₁ (kPa/J)	k₂ (ms/J)	Force→kPa (kPa/kN)
+Size 3	U8–U10	0.32	1.37	0.073	16.2
+Size 4	U12–U14	0.37	1.28	0.070	15.9
+Size 5	U16–Elite	0.43	1.19	0.067	15.7
+
+Source: Phillips et al. (2026) — linear regression R² > 0.999
+Biomechanical Adjustment
+Male: 1.00 (baseline)
+Female: 1.20 (+20% — Zhang et al., 2013; Caccese et al., 2018)
 
 
-🧪 Two-Phase Deployment
-Metric	Phase 1 — TODAY	Phase 2 — LAB-CALIBRATED
-Energy (J)	✅ LIVE — pure physics	✅ UNCHANGED — permanent reference
-kPa / ms	⏳ Placeholder values	✅ FINAL values — auto-update API
-Integration	✅ Complete — no changes needed	✅ Automatic — same endpoint, richer output
-
-Energy is scientifically complete TODAY. kPa and ms are clinical conversion factors that will be updated once laboratory calibration is finalised. Your integration NEVER changes — the API response simply improves automatically.
-
-
-💻 Code Examples
-Python
-import requests
-
-API_URL = "http://localhost:8000/api/v1/calculate-from-velocity"
-API_KEY = "your-api-key-here"
-
-payload = {
-    "timestamp": "2026-09-08T14:30:22.120Z",
-    "velocity_m_s": 14.2,
-    "ball_size": 5
-}
-
-resp = requests.post(
-    API_URL,
-    json=payload,
-    headers={"X-API-Key": API_KEY}
-)
-
-data = resp.json()
-print(f"Energy: {data['energy_J']} J")
-print(f"Pressure: {data['peak_kPa']} kPa")
+🎯 Risk Thresholds
+Table
+Level	Colour	Peak Pressure	Guidance
+LOW	🟢 Green	< 70 kPa	Within typical daily exposure
+MODERATE	🟡 Yellow	70–99 kPa	Monitor cumulative exposure
+ELEVATED	🟠 Orange	100–149 kPa	Significant impact — note event
+EXTREME	🔴 Red	≥ 150 kPa	High-energy impact — assess player
 
 
-cURL
-curl -X POST http://localhost:8000/api/v1/calculate-from-velocity \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-api-key-here" \
-  -d '{
-    "timestamp": "2026-09-08T14:30:22.120Z",
-    "velocity_m_s": 14.2,
-    "ball_size": 5
-  }'
+📁 Batch CSV Format
+Upload a CSV file with any combination of these columns:
+Table
+Column	Required?	Format	Example
+timestamp	Optional	YYYY-MM-DD HH:MM:SS	2026-09-10 15:30:45
+player_id	Optional	Text	Ronaldo_7
+velocity / velocity_kmh	One required	Numeric	45.2
+force_kN	One required	Numeric	3.8
+accel_x, accel_y, accel_z	One required	Numeric (g or m/s²)	18.5, -12.3, 25.1
+
+The system auto-detects input type and computes all metrics for every row.
+📊 Using the History Data
+After saving calculations or processing a batch:
+Go to History & Download tab
+Click Download CSV
+Open in Excel / Google Sheets
+Visualise trends:
+Line Chart → Pressure over time
+Scatter Plot → Energy vs Pressure
+Pivot Table → Per-player summary
+📚 References
+Phillips et al. (2026) — Ball impact characteristics and intracranial pressure wave propagation.
+Zhang et al. (2013) — Head impact accelerations in collegiate soccer: Gender differences.
+Caccese et al. (2018) — Sex differences in head impact biomechanics.
+Naunheim et al. (2003) — Linear acceleration predicts intracranial pressure in a head model.
 
 
-
-  📐 Scientific Principles
-Kinetic Energy: E = ½mv² — Newtonian first principles
-Velocity from IMU: Δv = a_total × Δt — sampled at 500 Hz
-Clinical Calibration: kPa = k₁ × J and ms = k₂ × J — linear regression from lab testing
-Peer-reviewed basis: Stone et al. (2016); Oeur et al. (2020); Farin et al. (2004)
-
-
-
-📝 Licence & Usage
-API access granted per tiered licence agreement
-Non-exclusive, non-transferable
-Clinical metrics (kPa/ms) auto-upgrade on lab completion
-All fees reinvested into player welfare research
-© 2026 Ball2Head CIC — Community Interest Company (England & Wales)
-
+📄 License
+This work is released for independent academic and clinical use.
+Code is open for audit and transparency — as part of a Community Interest Company (CIC) mission for player welfare.
+For commercial integration or league-wide deployment, please contact for licensing terms.
+<div align="center">
+Built for player welfare — from grassroots to elite.
+If this helps, ⭐ Star the repo & share the link!
+Live App · GitHub
+</div> ``
