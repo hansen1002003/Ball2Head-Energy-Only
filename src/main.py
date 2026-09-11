@@ -1,103 +1,172 @@
 """
 Ball2Head — Post-Match Squad Brain Health Ledger
 ==================================================
-Calibration: Phillips et al. (2026) — A1/B1 Mean — FIFA 430g
-Brain Load Index = kPa × ms  (BOTH k₁ AND k₂ — double-calibrated)
-Green/Amber/Red Thresholds: 0–45 / 45–90 / 90–160
+Investigational Research — Hansen Sominabo Kekom
+Birmingham Newman University — Final Year Project
+
+Calibration Source:
+  Phillips, I. et al. (2026) — Pressure wave propagation from association
+  football head collisions. Mean of A1/B1 elite match balls — FIFA 430g dry mass.
+
+Core Methodology:
+  • Kinetic Energy:       E = ½mv²
+  • Peak Pressure:        P = k₁ × E      → k₁ = 1.19 kPa/J  (dry)
+  • Wave Duration:        τ = k₂ × E      → k₂ = 0.067 ms/J (dry)
+  • Brain Load Units:     BLU = P × τ     → DOUBLE-CALIBRATED metric
+  • Wet Adjustment:       Damp ×1.10 | Wet Synthetic ×1.25
+
+Risk Thresholds (Visual Guide):
+  🟢 Low:       0–45    Brain Load Units
+  🟡 Moderate: 45–90    Brain Load Units
+  🔴 Elevated: 90–160   Brain Load Units
+
+Version: 2.1 — CSV Batch + Manual Input + Unified Plotly Ledger
 """
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import plotly.graph_objects as go
 import base64
 
 # =============================================================================
-# 📐 PHILLIPS CALIBRATION — YOUR CONSTANTS
+# PHILLIPS CALIBRATION CONSTANTS — A1/B1 MEAN, FIFA 430g DRY MASS
 # =============================================================================
-class Calibration:
+class PhillipsCalibration:
+    """
+    Lab-calibrated constants from Phillips et al. (2026).
+    Derived from mean values of A1 (thermally bonded) and B1 (fuse-welded)
+    elite match balls, standardised to FIFA regulation mass.
+    """
+    # Ball mass — FIFA standard Size 5
     BALL_MASS_DRY_KG = 0.430
-    DRY_k1_KPA_PER_J = 1.19   # kPa/J — Phillips A1/B1 Mean
-    DRY_k2_MS_PER_J = 0.067   # ms/J — Phillips A1/B1 Mean
     
-    WET_FACTORS = {"dry": 1.00, "damp": 1.10, "wet_synthetic": 1.25}
+    # Dry calibration constants
+    k1_KPA_PER_J_DRY = 1.19    # Peak pressure constant (kPa per Joule)
+    k2_MS_PER_J_DRY = 0.067    # Wave duration constant (ms per Joule)
+    
+    # Environmental correction factors
+    WET_FACTORS = {
+        "dry": 1.00,
+        "damp": 1.10,
+        "wet_synthetic": 1.25
+    }
     
     @classmethod
-    def get_constants(cls, condition="dry"):
-        cond = str(condition).lower().strip()
-        f = cls.WET_FACTORS.get(cond, 1.00)
+    def get_adjusted_constants(cls, match_condition: str = "dry") -> dict:
+        """
+        Apply environmental correction factors to base dry constants.
+        Returns k₁, k₂, and applied factor for audit trail.
+        """
+        condition = str(match_condition).lower().strip()
+        factor = cls.WET_FACTORS.get(condition, 1.00)
+        
         return {
-            "kPa_per_J": round(cls.DRY_k1_KPA_PER_J * f, 4),
-            "ms_per_J": round(cls.DRY_k2_MS_PER_J * f, 5),
-            "factor": f
+            "kPa_per_J": round(cls.k1_KPA_PER_J_DRY * factor, 4),
+            "ms_per_J": round(cls.k2_MS_PER_J_DRY * factor, 5),
+            "wet_factor_applied": factor
         }
 
 # =============================================================================
-# 🧮 CALCULATION ENGINE — PER IMPACT
+# SINGLE IMPACT CALCULATION ENGINE
 # =============================================================================
-def calculate_impact(velocity_mps, condition="dry"):
-    """From velocity → Joules → kPa/J & ms/J → Total kPa & ms → Brain Load Units"""
+def calculate_single_impact(
+    velocity_mps: float,
+    match_condition: str = "dry"
+) -> dict | None:
+    """
+    Calculate all heading load metrics from ball velocity at impact.
+    
+    Physics Chain:
+      Velocity → Kinetic Energy → Calibrated Pressure & Duration → Brain Load
+    
+    Returns complete audit trail including all intermediate values.
+    """
     try:
-        v = float(velocity_mps)
-        if v <= 0:
+        velocity = float(velocity_mps)
+        if velocity <= 0:
             return None
-    except:
+    except (ValueError, TypeError):
         return None
     
-    # Step 1: Kinetic Energy E = ½mv²
-    joules = 0.5 * Calibration.BALL_MASS_DRY_KG * (v ** 2)
+    # Step 1: Calculate kinetic energy — E = ½mv²
+    joules = 0.5 * PhillipsCalibration.BALL_MASS_DRY_KG * (velocity ** 2)
     
-    # Step 2: Get calibrated constants
-    c = Calibration.get_constants(condition)
-    kpa_per_j = c["kPa_per_J"]
-    ms_per_j = c["ms_per_J"]
+    # Step 2: Get condition-adjusted calibration constants
+    cal = PhillipsCalibration.get_adjusted_constants(match_condition)
     
-    # Step 3: Total Pressure & Duration for THIS impact
-    total_kpa = kpa_per_j * joules
-    total_ms = ms_per_j * joules  # Already in ms since k₂ = ms/J
+    # Step 3: Calculate peak pressure and wave duration
+    total_kpa = cal["kPa_per_J"] * joules
+    total_ms = cal["ms_per_J"] * joules
     
-    # Step 4: BRAIN LOAD UNITS = kPa × ms  ← DOUBLE CALIBRATED!
+    # Step 4: Brain Load Units = kPa × ms — DOUBLE-CALIBRATED EXPOSURE METRIC
     brain_load_units = total_kpa * total_ms
     
+    # Step 5: Assign load category from cumulative threshold guide
+    if brain_load_units < 45:
+        category = "LOW"
+    elif brain_load_units < 90:
+        category = "MODERATE"
+    elif brain_load_units < 160:
+        category = "HIGH"
+    else:
+        category = "ELEVATED"
+    
     return {
-        "ball_velocity_mps": round(v, 2),
-        "condition": condition,
+        "ball_velocity_mps": round(velocity, 2),
+        "condition": match_condition,
         "Joules": round(joules, 2),
-        "kPa_per_J": round(kpa_per_j, 4),
-        "ms_per_J": round(ms_per_j, 5),
+        "kPa_per_J": cal["kPa_per_J"],
+        "ms_per_J": cal["ms_per_J"],
         "Total_kPa": round(total_kpa, 2),
         "Total_ms": round(total_ms, 3),
-        "Brain_Load_Units": round(brain_load_units, 4)
+        "Brain_Load_Units": round(brain_load_units, 4),
+        "Load_Category": category
     }
 
 # =============================================================================
-# 📊 GENERATE PLOTLY LEDGER — EXACTLY THE FORMAT YOU LIKE
+# UNIFIED PLOTLY LEDGER GENERATOR
 # =============================================================================
-def generate_ledger_chart(df):
+def generate_brain_health_ledger(input_dataframe: pd.DataFrame) -> tuple:
     """
-    df must contain: player_id, player_name, Minute, Joules,
-                     kPa_per_J, ms_per_J, Total_kPa, Total_ms, Brain_Load_Units
+    Produce interactive squad ledger — identical output whether sourced from
+    batch CSV upload or manual single-impact entry.
+    
+    Calculates:
+      • Player header count & display label
+      • Chronological sorting per player
+      • Cumulative brain load timeline
+      • Plotly chart with clinical risk bands & audit-ready hover tooltips
+    
+    Returns: (plotly_figure, enriched_dataframe)
     """
-    # Label: PlayerName (X Headers)
+    df = input_dataframe.copy()
+    
+    # Create standardised player label with header count
     header_counts = df["player_name"].value_counts().to_dict()
     df["Header_Count"] = df["player_name"].map(header_counts)
     df["Player_Label"] = df["player_name"] + " (" + df["Header_Count"].astype(str) + " Headers)"
     
-    # Sort chronologically per player
+    # Sort chronologically so cumulative load progresses correctly
     df = df.sort_values(["Player_Label", "Minute"])
     
-    # Cumulative Brain Load Timeline
-    df["Cumulative_Brain_Load"] = df.groupby("Player_Label")["Brain_Load_Units"].cumsum().round(2)
+    # Compute cumulative brain load — tracks exposure progression per player
+    df["Cumulative_Brain_Load"] = df.groupby("Player_Label")[
+        "Brain_Load_Units"
+    ].cumsum().round(2)
     
-    # Generate Plotly Line Chart — EXACTLY THE STYLE
+    # Generate interactive line chart — standardised visual format
     fig = px.line(
         df,
         x="Minute",
         y="Cumulative_Brain_Load",
         color="Player_Label",
         markers=True,
-        title="<b>POST-MATCH SQUAD HEAD-LOAD LEDGER</b><br><sup>Metrics Normalized via Lab-Calibrated Inverse Core Constants — Phillips et al. (2026)</sup>",
+        title=(
+            "<b>POST-MATCH SQUAD HEAD-LOAD LEDGER</b>"
+            "<br><sup>Metrics Normalised via Lab-Calibrated Inverse Core Constants — "
+            "Phillips et al. (2026)</sup>"
+        ),
         labels={
             "Minute": "Match Timeline (Minutes)",
             "Cumulative_Brain_Load": "Cumulative Brain Load Index",
@@ -113,12 +182,12 @@ def generate_ledger_chart(df):
         },
     )
     
-    # ⚠️ CLINICAL RISK THRESHOLDS — Green / Amber / Red
+    # Add clinical risk threshold bands — visual guide for medics
     fig.add_hrect(y0=0, y1=45, fillcolor="#2ecc71", opacity=0.06, layer="below", line_width=0)
     fig.add_hrect(y0=45, y1=90, fillcolor="#f1c40f", opacity=0.06, layer="below", line_width=0)
     fig.add_hrect(y0=90, y1=160, fillcolor="#e74c3c", opacity=0.06, layer="below", line_width=0)
     
-    # Style — Elite Clinical Dashboard
+    # Professional dashboard styling — consistent clinical presentation
     fig.update_layout(
         xaxis=dict(range=[0, 95], dtick=10, gridcolor="rgba(0,0,0,0.05)"),
         yaxis=dict(range=[0, 160], gridcolor="rgba(0,0,0,0.05)"),
@@ -133,92 +202,235 @@ def generate_ledger_chart(df):
     return fig, df
 
 # =============================================================================
-# 🖥️ STREAMLIT INTERFACE
+# STREAMLIT APPLICATION — MAIN INTERFACE
 # =============================================================================
-def run_app():
-    st.set_page_config(page_title="Ball2Head — Brain Health Ledger", layout="wide")
-    st.title("⚽🧠 Post-Match Squad Brain Health Ledger")
-    st.subheader("Double-Calibrated: kPa × ms | Phillips et al. (2026) — A1/B1 Mean — FIFA 430g")
+def run_application():
+    """
+    Unified interface supporting TWO input methods:
+      1. Batch CSV Upload → process entire match event log
+      2. Manual Entry → add individual impacts, build ledger incrementally
     
-    with st.expander("📋 Methodology & Formula"):
+    BOTH methods produce IDENTICAL calculations, chart, and exports.
+    """
+    st.set_page_config(
+        page_title="Ball2Head — Brain Health Ledger",
+        layout="wide"
+    )
+    
+    # Persist session state — accumulate manual entries
+    if "manual_entries" not in st.session_state:
+        st.session_state.manual_entries = []
+    
+    # ─── PAGE HEADER ──────────────────────────────────────────────────────
+    st.title("⚽🧠 Post-Match Squad Brain Health Ledger")
+    st.subheader(
+        "Double-Calibrated: kPa × ms | Phillips et al. (2026) — "
+        "A1/B1 Mean — FIFA 430g"
+    )
+    
+    with st.expander("📋 Methodology, Formula & Calibration Source"):
         st.markdown("""
-        **Calibration:** k₁ = 1.19 kPa/J | k₂ = 0.067 ms/J — A1/B1 Mean, FIFA 430g
+        **Calibration Source:** Phillips, I. et al. (2026). Pressure wave propagation
+        from association football head collisions. Mean of A1/B1 elite match balls,
+        standardised to FIFA 430 g dry mass.
         
-        **Brain Load Units = Total kPa × Total ms**
-        > Uses **BOTH** Phillips constants — Pressure MAGNITUDE × Wave DURATION
-        > More accurate than pressure alone — captures COMPLETE exposure
+        **Physics Chain:**
+        - Kinetic Energy: $E = \\frac{1}{2}mv^2$
+        - Peak Pressure: $P = k_1 \\times E$  → **k₁ = 1.19 kPa/J**
+        - Wave Duration: $τ = k_2 \\times E$  → **k₂ = 0.067 ms/J**
+        - **Brain Load Units = P × τ** → Uses BOTH constants — complete exposure metric
         
-        **Risk Thresholds (visual guide):**
-        🟢 Green: 0–45 — Low
-        🟡 Amber: 45–90 — Moderate
-        🔴 Red: 90–160 — Elevated
-        
-        *Reference: Phillips et al. (2026) — Pressure wave propagation from association football head collisions*
+        **Risk Thresholds (Visual Guide):**
+        🟢 Low: 0–45 | 🟡 Moderate: 45–90 | 🔴 Elevated: 90–160
         """)
     
-    # Upload Section
-    st.header("📁 Upload Match Data")
-    st.info("Columns needed: `player_name`, `Minute` (match time), `ball_velocity_mps`, `condition` (optional)")
+    # ─── MATCH CONTEXT ───────────────────────────────────────────────────
+    st.header("📋 Match Information")
+    col_match1, col_match2 = st.columns(2)
+    with col_match1:
+        match_teams = st.text_input("Match", value="Team A vs Team B")
+    with col_match2:
+        match_date = st.text_input("Date", value=pd.Timestamp.now().strftime("%Y-%m-%d"))
     
-    match_teams = st.text_input("Match", value="Team A vs Team B")
-    uploaded = st.file_uploader("Upload Match Events CSV", type=["csv"])
+    st.divider()
     
-    if uploaded:
-        df_raw = pd.read_csv(uploaded)
-        st.write(f"📋 {len(df_raw)} rows uploaded")
+    # ─── INPUT METHOD 1: BATCH CSV UPLOAD ────────────────────────────────
+    st.header("📁 Method 1: Upload Match Events CSV")
+    st.info(
+        "Required columns: `player_name`, `Minute` (match time in minutes), "
+        "`ball_velocity_mps` (speed at impact). Optional: `condition`."
+    )
+    
+    uploaded_file = st.file_uploader(
+        "Upload Match Events CSV File",
+        type=["csv"],
+        key="csv_uploader"
+    )
+    
+    if uploaded_file:
+        df_raw = pd.read_csv(uploaded_file)
+        st.write(f"📋 Uploaded {len(df_raw)} rows × {len(df_raw.columns)} columns")
         
-        # Auto-detect columns
-        vel_col = next((c for c in df_raw.columns if str(c).lower() in ["velocity", "ball_velocity_mps", "speed"]), None)
-        name_col = next((c for c in df_raw.columns if str(c).lower() in ["player_name", "playername", "player"]), None)
-        time_col = next((c for c in df_raw.columns if str(c).lower() in ["minute", "event_minute", "time"]), None)
-        cond_col = next((c for c in df_raw.columns if str(c).lower() in ["condition", "weather"]), None)
+        # Auto-detect required columns
+        vel_col = next((c for c in df_raw.columns if str(c).lower() in [
+            "velocity", "ball_velocity_mps", "speed", "ballvelocity"
+        ]), None)
+        name_col = next((c for c in df_raw.columns if str(c).lower() in [
+            "player_name", "playername", "player", "name"
+        ]), None)
+        time_col = next((c for c in df_raw.columns if str(c).lower() in [
+            "minute", "event_minute", "time", "timestamp"
+        ]), None)
+        cond_col = next((c for c in df_raw.columns if str(c).lower() in [
+            "condition", "weather", "match_condition"
+        ]), None)
         
         if not all([vel_col, name_col, time_col]):
-            st.error("❌ Missing columns! Need: player_name, Minute, ball_velocity_mps")
+            st.error("❌ CSV must contain columns: player_name, Minute, ball_velocity_mps")
             return
         
-        # Calculate EVERY row
+        # Process every row through calculation engine
         results = []
         for _, row in df_raw.iterrows():
-            vel = row[vel_col]
-            name = row[name_col]
-            minute = row[time_col]
-            cond = str(row[cond_col]).lower().strip() if cond_col else "dry"
-            if cond not in ["dry", "damp", "wet_synthetic"]: cond = "dry"
+            velocity = float(row[vel_col])
+            player_name = str(row[name_col])
+            minute = float(row[time_col])
+            condition = str(row[cond_col]).lower().strip() if cond_col else "dry"
+            if condition not in ["dry", "damp", "wet_synthetic"]:
+                condition = "dry"
             
-            calc = calculate_impact(vel, cond)
+            calc = calculate_single_impact(velocity, condition)
             if calc:
-                calc["player_name"] = name
+                calc["player_name"] = player_name
                 calc["Minute"] = minute
                 results.append(calc)
         
         if not results:
-            st.error("❌ No valid data — check velocity values")
+            st.error("❌ No valid calculations — check velocity values")
             return
         
+        # Generate and display standard ledger
         df_calc = pd.DataFrame(results)
-        st.success(f"✅ Calculated {len(df_calc)} headers across {df_calc['player_name'].nunique()} players")
+        st.success(f"✅ Calculated {len(df_calc)} header impacts across {df_calc['player_name'].nunique()} players")
         
-        # Generate Chart — EXACTLY THE STYLE
-        fig, df_final = generate_ledger_chart(df_calc)
+        fig, df_final = generate_brain_health_ledger(df_calc)
         st.plotly_chart(fig, use_container_width=True)
         
-        # Download CSV
-        csv = df_final.to_csv(index=False)
-        st.download_button("📥 Download Calculated CSV", csv, "BrainHealth_Ledger.csv", "text/csv", type="primary")
+        # Export options
+        csv_download = df_final.to_csv(index=False)
+        st.download_button(
+            "📥 Download Calculated CSV",
+            csv_download,
+            f"BrainHealth_Ledger_{match_date}.csv",
+            "text/csv",
+            type="primary"
+        )
         
-        # Download Interactive HTML
-        html_bytes = fig.to_html()
-        b64 = base64.b64encode(html_bytes.encode()).decode()
-        href = f'<a href="data:text/html;charset=utf-8;base64,{b64}" download="BrainHealth_Interactive.html">📄 Download Interactive HTML Ledger</a>'
-        st.markdown(href, unsafe_allow_html=True)
+        html_ledger = fig.to_html()
+        b64_html = base64.b64encode(html_ledger.encode()).decode()
+        download_link = (
+            f'<a href="data:text/html;charset=utf-8;base64,{b64_html}" '
+            f'download="BrainHealth_Interactive_{match_date}.html">'
+            f'📄 Download Full Interactive HTML Ledger</a>'
+        )
+        st.markdown(download_link, unsafe_allow_html=True)
         
-        # Show data table
-        with st.expander("📋 View Calculated Data Table"):
+        with st.expander("📋 View Complete Calculation Table"):
             st.dataframe(df_final, use_container_width=True)
     
     st.divider()
-    st.caption("Ball2Head | Phillips et al. (2026) | Double-Calibrated: kPa × ms | A1/B1 Mean — FIFA 430g")
+    
+    # ─── INPUT METHOD 2: MANUAL SINGLE IMPACT ENTRY ──────────────────────
+    st.header("✍️ Method 2: Enter Header Impacts Manually")
+    st.info(
+        "Add headers one at a time — ledger builds automatically. "
+        "Same calculations, same chart, same export formats."
+    )
+    
+    with st.form("manual_entry_form"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            input_name = st.text_input("Player Name / ID", placeholder="e.g. VVD_04")
+            input_minute = st.number_input("Match Minute", min_value=0.0, max_value=120.0, step=0.5)
+        with col2:
+            input_velocity = st.number_input(
+                "Ball Velocity (m/s)",
+                min_value=5.0, max_value=35.0, step=0.5, value=18.0
+            )
+            input_condition = st.selectbox(
+                "Match Condition",
+                options=["dry", "damp", "wet_synthetic"],
+                index=0
+            )
+        with col3:
+            st.markdown("<br>", unsafe_allow_html=True)
+            submit_button = st.form_submit_button(
+                label="➕ Add Header Impact to Ledger",
+                type="primary",
+                use_container_width=True
+            )
+        
+        if submit_button:
+            if not input_name:
+                st.error("❌ Please enter a Player Name / ID")
+            else:
+                calculation = calculate_single_impact(input_velocity, input_condition)
+                if calculation:
+                    calculation["player_name"] = input_name
+                    calculation["Minute"] = input_minute
+                    st.session_state.manual_entries.append(calculation)
+                    st.success(
+                        f"✅ Added: {input_name} — {input_velocity} m/s → "
+                        f"{calculation['Brain_Load_Units']} BLU"
+                    )
+                else:
+                    st.error("❌ Invalid velocity — check value entered")
+    
+    # ─── DISPLAY MANUAL ENTRIES & GENERATE LEDGER ────────────────────────
+    if st.session_state.manual_entries:
+        st.divider()
+        st.subheader(f"📊 Ledger — {len(st.session_state.manual_entries)} Impact(s) Entered")
+        
+        manual_df = pd.DataFrame(st.session_state.manual_entries)
+        ledger_fig, ledger_df = generate_brain_health_ledger(manual_df)
+        
+        st.plotly_chart(ledger_fig, use_container_width=True)
+        
+        # Manual entry exports
+        manual_csv = ledger_df.to_csv(index=False)
+        st.download_button(
+            "📥 Download Manual Ledger CSV",
+            manual_csv,
+            f"Manual_Ledger_{match_date}.csv",
+            "text/csv",
+            type="primary"
+        )
+        
+        manual_html = ledger_fig.to_html()
+        b64_manual = base64.b64encode(manual_html.encode()).decode()
+        manual_link = (
+            f'<a href="data:text/html;charset=utf-8;base64,{b64_manual}" '
+            f'download="Manual_Interactive_Ledger_{match_date}.html">'
+            f'📄 Download Manual Interactive HTML Ledger</a>'
+        )
+        st.markdown(manual_link, unsafe_allow_html=True)
+        
+        with st.expander("📋 View Manual Calculation Table"):
+            st.dataframe(ledger_df, use_container_width=True)
+        
+        # Clear button
+        if st.button("🗑️ Clear All Manual Entries", type="secondary"):
+            st.session_state.manual_entries = []
+            st.rerun()
+    
+    st.divider()
+    st.caption(
+        "Ball2Head — Investigational Research | Phillips et al. (2026) | "
+        "Double-Calibrated: kPa × ms | A1/B1 Mean — FIFA 430g"
+    )
 
+# =============================================================================
+# RUN APPLICATION
+# =============================================================================
 if __name__ == "__main__":
-    run_app()
+    run_application()
