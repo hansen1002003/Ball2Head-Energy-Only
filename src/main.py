@@ -10,20 +10,18 @@ Calibration Source:
 
 Core Methodology:
   • Kinetic Energy:       E = ½mv²
-  • Peak Pressure:        P = k₁ × E      → k₁ = 1.19 kPa/J  (dry)
-  • Wave Duration:        τ = k₂ × E      → k₂ = 0.067 ms/J (dry)
-  • Brain Load Units:     BLU = P × τ     → DOUBLE-CALIBRATED metric
+  • Peak Pressure:        P = k₁ × E        → k₁ = 1.19 kPa/J  (dry)
+  • Wave Duration:        τ = k₂ × E        → k₂ = 0.067 ms/J (dry)
+  • Brain Load Units:     BLU = P × τ       → DOUBLE-CALIBRATED metric
   • Wet Adjustment:       Damp ×1.10 | Wet Synthetic ×1.25
 
 Risk Thresholds (Visual Guide):
   🟢 Low:       0–45    Brain Load Units
-  🟡 Moderate: 45–90    Brain Load Units
-  🔴 Elevated: 90–160   Brain Load Units
+  🟡 Moderate:  45–90   Brain Load Units
+  🔴 Elevated:  90–160  Brain Load Units
 
-Version: 2.1 — CSV Batch + Manual Input + Unified Plotly Ledger
+Version: 2.2.1 — FIXED HTML Export + CSV Batch + Manual Input
 """
-
-
 
 import streamlit as st
 import pandas as pd
@@ -89,30 +87,25 @@ def calculate_single_impact(velocity_mps: float, match_condition: str = "dry") -
     }
 
 # =============================================================================
-# ✅ FIXED CHART GENERATOR — AUTO-SCALES TO DATA
+# ✅ CHART GENERATOR — AUTO-SCALES TO DATA
 # =============================================================================
 def generate_brain_health_ledger(input_dataframe: pd.DataFrame) -> tuple:
     df = input_dataframe.copy()
     
-    # Standard player labeling
     header_counts = df["player_name"].value_counts().to_dict()
     df["Header_Count"] = df["player_name"].map(header_counts)
     df["Player_Label"] = df["player_name"] + " (" + df["Header_Count"].astype(str) + " Headers)"
     
-    # Sort chronologically
     df = df.sort_values(["Player_Label", "Minute"])
     
-    # Cumulative calculation
     df["Cumulative_Brain_Load"] = df.groupby("Player_Label")[
         "Brain_Load_Units"
     ].cumsum().round(2)
     
-    # ✅ GET ACTUAL DATA RANGE — AUTO-SCALE CHART
     max_load = df["Cumulative_Brain_Load"].max()
-    y_max = max(160, round(max_load * 1.1, -1))  # At least 160, or 10% above highest value
+    y_max = max(160, round(max_load * 1.1, -1))
     x_max = max(95, round(df["Minute"].max() + 5, -1))
     
-    # Generate chart
     fig = px.line(
         df,
         x="Minute",
@@ -139,12 +132,10 @@ def generate_brain_health_ledger(input_dataframe: pd.DataFrame) -> tuple:
         },
     )
     
-    # Clinical risk zones — always visible
     fig.add_hrect(y0=0, y1=45, fillcolor="#2ecc71", opacity=0.06, layer="below", line_width=0)
     fig.add_hrect(y0=45, y1=90, fillcolor="#f1c40f", opacity=0.06, layer="below", line_width=0)
     fig.add_hrect(y0=90, y1=160, fillcolor="#e74c3c", opacity=0.06, layer="below", line_width=0)
     
-    # ✅ AUTO-SCALED AXES — no more hidden points!
     fig.update_layout(
         xaxis=dict(range=[0, x_max], dtick=10, gridcolor="rgba(0,0,0,0.05)"),
         yaxis=dict(range=[0, y_max], gridcolor="rgba(0,0,0,0.05)"),
@@ -157,6 +148,16 @@ def generate_brain_health_ledger(input_dataframe: pd.DataFrame) -> tuple:
     fig.update_traces(line=dict(width=3.5), marker=dict(size=8))
     
     return fig, df
+
+# =============================================================================
+# ✅ FIXED HTML DOWNLOAD — no encoding argument
+# =============================================================================
+def get_html_download_link(fig, filename="Post-Match_Squad_Head-Ledger.html"):
+    """Convert Plotly figure to downloadable interactive HTML file — FIXED"""
+    html_content = fig.to_html(include_plotlyjs="cdn", full_html=True)
+    b64 = base64.b64encode(html_content.encode()).decode()
+    href = f'<a href="data:text/html;charset=utf-8;base64,{b64}" download="{filename}" style="display:inline-block; padding:0.5rem 1rem; color:#0c5460; background-color:#d1ecf1; border-radius:0.3rem; text-decoration:none; font-weight:500;">📄 Download Interactive HTML — Post-Match Head-Ledger Graph</a>'
+    return href
 
 # =============================================================================
 # MAIN APPLICATION
@@ -183,7 +184,6 @@ def run_application():
         - Risk Zones: 🟢 0–45 | 🟡 45–90 | 🔴 90–160
         """)
     
-    # Match Info
     st.header("📋 Match Information")
     col1, col2 = st.columns(2)
     with col1:
@@ -226,7 +226,9 @@ def run_application():
             fig, df_final = generate_brain_health_ledger(df_calc)
             st.success(f"✅ {len(df_calc)} impacts calculated")
             st.plotly_chart(fig, use_container_width=True)
-            st.download_button("📥 Download CSV", df_final.to_csv(index=False), "ledger.csv")
+            
+            st.download_button("📥 Download CSV", df_final.to_csv(index=False), "ledger.csv", type="primary")
+            st.markdown(get_html_download_link(fig, f"{match_teams.replace(' ','_')}_Head-Ledger.html"), unsafe_allow_html=True)
     
     st.divider()
     
@@ -264,14 +266,10 @@ def run_application():
         manual_df = pd.DataFrame(st.session_state.manual_entries)
         fig, ledger_df = generate_brain_health_ledger(manual_df)
         
-        # ✅ CHART WILL NOW SHOW — AUTO-SCALED!
         st.plotly_chart(fig, use_container_width=True)
         
-        # Exports
         st.download_button("📥 Download CSV", ledger_df.to_csv(index=False), "manual_ledger.csv", type="primary")
-        html_bytes = fig.to_html()
-        b64 = base64.b64encode(html_bytes.encode()).decode()
-        st.markdown(f'<a href="data:text/html;base64,{b64}" download="manual_ledger.html">📄 Download Interactive HTML</a>', unsafe_allow_html=True)
+        st.markdown(get_html_download_link(fig, "Manual_Head-Ledger.html"), unsafe_allow_html=True)
         
         with st.expander("📋 View Data Table"):
             st.dataframe(ledger_df, use_container_width=True)
