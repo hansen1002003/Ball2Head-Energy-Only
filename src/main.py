@@ -1,266 +1,347 @@
-# ============================================================
-# 🏆 BALL2HEAD — Heading Load Calculation Dashboard
-# Calibration based on Phillips et al. (2026)
-# Pressure Wave Propagation from Association Football Head Collisions
-# ============================================================
-# Author: Hansen Sominabo Kekom
-# Institution: Birmingham Newman University
-# GitHub: https://github.com/hansen1002003/Ball2Head-Energy-Only
-# ============================================================
+"""
+Ball2Head — Heading Load Calculator
+====================================
+Calibration derived from:
+  Phillips, I. et al. (2026) "Pressure wave propagation from association football head collisions"
+  Proc IMechE Part P: J Sports Engineering and Technology
+
+Method: Linear proportionality P ∝ E → k₁ = P/E, k₂ = t/E
+Elite Standard: Mean of A1 (Thermally Bonded) & B1 (Fuse-Welded)
+Standardised to: FIFA Size 5 — 430 g dry mass
+
+Author: Hansen Sominabo Kekom
+Version: 1.0 — Pure Phillips Calibration
+"""
 
 import streamlit as st
 import pandas as pd
 import numpy as np
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import uuid
+from typing import Optional, List
+import uvicorn
+import threading
 
-# ============================================================
-# ⚙️ PAGE CONFIG — Kept identical for deployed compatibility
-# ============================================================
-st.set_page_config(
-    page_title="Ball2Head — Heading Load Calculator",
-    page_icon="⚽",
-    layout="wide",
-    initial_sidebar_state="expanded"
+# =============================================================================
+# CALIBRATION CONSTANTS — DERIVED EXCLUSIVELY FROM PHILLIPS ET AL. (2026)
+# =============================================================================
+# Source: A1/B1 mean at 18 m/s, standardised to FIFA 430 g
+# k₁ = Pressure ÷ Energy  |  k₂ = Duration ÷ Energy
+
+class Calibration:
+    """Elite Standard — A1/B1 Mean, FIFA 430g"""
+    BALL_MASS_DRY_KG = 0.430       # FIFA regulation mass
+    
+    DRY_k1_KPA_PER_J = 1.19        # kPa/J — baseline
+    DRY_k2_MS_PER_J = 0.067        # ms/J — baseline
+    
+    # Wet condition factors — from Phillips measured A1/B1 mass increase + pressure effect
+    WET_FACTORS = {
+        "dry": 1.00,
+        "damp": 1.10,
+        "wet_synthetic": 1.25
+    }
+    
+    @classmethod
+    def get_factors(cls, condition: str):
+        """Get k1, k2 adjusted for conditions"""
+        cond = condition.lower().strip()
+        factor = cls.WET_FACTORS.get(cond, 1.00)
+        return {
+            "k1_kpa_j": round(cls.DRY_k1_KPA_PER_J * factor, 4),
+            "k2_ms_j": round(cls.DRY_k2_MS_PER_J * factor, 5),
+            "wet_factor": factor
+        }
+
+
+# =============================================================================
+# CORE CALCULATION ENGINE — PURE PHILLIPS PROPORTIONALITY
+# =============================================================================
+
+def calculate_metrics(velocity_mps: float, condition: str = "dry"):
+    """
+    Calculate heading load metrics from ball velocity.
+    
+    Formula (from Phillips et al. 2026 — P ∝ E, t ∝ E):
+        E = ½ × m × v²
+        P = k₁ × E
+        t = k₂ × E
+    
+    Args:
+        velocity_mps: Ball speed at impact (m/s)
+        condition: dry / damp / wet_synthetic
+    
+    Returns:
+        Dictionary of all calculated metrics
+    """
+    if velocity_mps <= 0:
+        raise ValueError("Velocity must be greater than 0")
+    
+    # Step 1: Kinetic Energy — E = ½mv²
+    energy_j = 0.5 * Calibration.BALL_MASS_DRY_KG * (velocity_mps ** 2)
+    
+    # Step 2: Get calibration constants (baseline + condition-adjusted)
+    dry_k1 = Calibration.DRY_k1_KPA_PER_J
+    dry_k2 = Calibration.DRY_k2_MS_PER_J
+    factors = Calibration.get_factors(condition)
+    
+    # Step 3: Calculate baseline (dry) values
+    baseline_kpa = round(dry_k1 * energy_j, 2)
+    baseline_ms = round(dry_k2 * energy_j, 3)
+    
+    # Step 4: Calculate condition-adjusted values
+    adjusted_kpa = round(factors["k1_kpa_j"] * energy_j, 2)
+    adjusted_ms = round(factors["k2_ms_j"] * energy_j, 3)
+    
+    # Step 5: Load category — from pressure thresholds
+    if adjusted_kpa < 30:
+        category = "LOW"
+    elif adjusted_kpa < 60:
+        category = "MODERATE"
+    elif adjusted_kpa < 90:
+        category = "HIGH"
+    else:
+        category = "EXTREME"
+    
+    return {
+        "ball_velocity_mps": round(velocity_mps, 2),
+        "condition": condition,
+        "kinetic_energy_j": round(energy_j, 2),
+        
+        "baseline_dry_kpa": baseline_kpa,
+        "baseline_dry_wave_duration_ms": baseline_ms,
+        
+        "adjusted_kpa": adjusted_kpa,
+        "adjusted_wave_duration_ms": adjusted_ms,
+        "wet_factor_applied": factors["wet_factor"],
+        
+        "load_category": category,
+        "calibration_used": "A1/B1 Mean — FIFA 430g — Phillips et al. (2026)"
+    }
+
+
+# =============================================================================
+# FAST API — FOR DATA PROVIDERS / AUTOMATED INTEGRATION
+# =============================================================================
+api_app = FastAPI(
+    title="Ball2Head API",
+    description="Heading Load Metrics — Calibrated from Phillips et al. (2026)",
+    version="1.0.0"
 )
 
-# ============================================================
-# 📚 CALIBRATION CONSTANTS — Derived from Phillips et al. (2026)
-# ============================================================
-# k₁ = Peak Pressure (kPa) per Joule
-# k₂ = Pressure Wave Duration (ms) per Joule
-# Source: Size 5 = mean response across modern synthetic balls
-# Size 3/4 = scaled from FIFA regulation mass ratios
+class CalculationRequest(BaseModel):
+    match_id: Optional[str] = None
+    timestamp: Optional[str] = None
+    ball_velocity_mps: float
+    condition: str = "dry"  # dry / damp / wet_synthetic
 
-CALIBRATION = {
-    3: {  # U8–U10
-        "name": "Size 3 (U8–U10)",
-        "mass_kg": 0.320,
-        "k1_kPa_per_J": 1.37,
-        "k2_ms_per_J": 0.073
-    },
-    4: {  # U12–U14
-        "name": "Size 4 (U12–U14)",
-        "mass_kg": 0.370,
-        "k1_kPa_per_J": 1.28,
-        "k2_ms_per_J": 0.070
-    },
-    5: {  # U16–Elite — FIFA standard
-        "name": "Size 5 (U16–Elite)",
-        "mass_kg": 0.430,
-        "k1_kPa_per_J": 1.19,
-        "k2_ms_per_J": 0.067
-    }
+class CalculationResponse(BaseModel):
+    calculation_id: str
+    match_id: Optional[str]
+    timestamp: Optional[str]
+    ball_velocity_mps: float
+    condition: str
+    kinetic_energy_j: float
+    baseline_dry_kpa: float
+    baseline_dry_wave_duration_ms: float
+    adjusted_kpa: float
+    adjusted_wave_duration_ms: float
+    wet_factor_applied: float
+    load_category: str
+    calibration_reference: str
+
+
+@api_app.post("/v1/calculate", response_model=CalculationResponse)
+async def api_calculate(request: CalculationRequest):
+    """Calculate heading load from ball velocity — live endpoint"""
+    try:
+        result = calculate_metrics(request.ball_velocity_mps, request.condition)
+        return CalculationResponse(
+            calculation_id=f"b2h_{uuid.uuid4().hex[:8]}",
+            match_id=request.match_id,
+            timestamp=request.timestamp,
+            **result,
+            calibration_reference="Phillips et al. (2026) — A1/B1 Mean — FIFA 430g"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+def run_api():
+    """Run API in background thread"""
+    uvicorn.run(api_app, host="0.0.0.0", port=8000)
+
+
+# =============================================================================
+# STREAMLIT INTERFACE — FOR MANUAL USE / BATCH CSV
+# =============================================================================
+
+def run_streamlit():
+    st.set_page_config(page_title="Ball2Head — Heading Load Calculator", layout="wide")
+    st.title("⚽ Ball2Head — Heading Load Metrics")
+    st.subheader("Calibrated from Phillips et al. (2026) — Elite Size 5 Standard")
+    
+    # Methodology statement — full transparency
+    with st.expander("📋 Methodology & Calibration Source"):
+        st.markdown("""
+        **Calibration Source:** Mean of A1 (Thermally Bonded) & B1 (Fuse-Welded) elite match balls, 
+        standardised to FIFA regulation 430 g dry mass.
+        
+        **Formula:**
+        - Kinetic Energy: $E = \\frac{1}{2}mv^2$
+        - Peak Pressure: $P = k_1 \\times E$  → **k₁ = 1.19 kPa/J (dry)**
+        - Wave Duration: $t = k_2 \\times E$  → **k₂ = 0.067 ms/J (dry)**
+        
+        **Wet Conditions:** Adjustment factors derived from Phillips' measured mass increase 
+        and pressure amplification (A1/B1 mean).
+        - Damp: ×1.10
+        - Wet Synthetic: ×1.25
+        
+        **Reference:** Phillips, I. et al. (2026) — *Pressure wave propagation from association football head collisions*
+        """)
+    
+    # -------------------------------------------------------------------------
+    # SECTION 1 — MANUAL INPUT
+    # -------------------------------------------------------------------------
+    st.header("🎯 Single Calculation")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        velocity = st.number_input("Ball Velocity at Impact (m/s)", 
+                                   min_value=5.0, max_value=35.0, value=18.0, step=0.5)
+    with col2:
+        condition = st.selectbox("Match Conditions", 
+                                options=["dry", "damp", "wet_synthetic"],
+                                index=0,
+                                help="Dry = Standard baseline")
+    
+    if st.button("Calculate Metrics", type="primary"):
+        result = calculate_metrics(velocity, condition)
+        
+        st.success("✅ Calculation Complete — Pure Phillips Calibration")
+        
+        rcol1, rcol2, rcol3 = st.columns(3)
+        with rcol1:
+            st.metric("Kinetic Energy", f"{result['kinetic_energy_j']} J")
+            st.metric("Baseline Dry Pressure", f"{result['baseline_dry_kpa']} kPa")
+        with rcol2:
+            st.metric("Adjusted Pressure", f"{result['adjusted_kpa']} kPa", 
+                     delta=f"×{result['wet_factor_applied']}")
+            st.metric("Baseline Dry Duration", f"{result['baseline_dry_wave_duration_ms']} ms")
+        with rcol3:
+            st.metric("Adjusted Duration", f"{result['adjusted_wave_duration_ms']} ms")
+            st.metric("Load Category", result['load_category'])
+        
+        st.json(result)
+    
+    st.divider()
+    
+    # -------------------------------------------------------------------------
+    # SECTION 2 — BATCH CSV UPLOAD
+    # -------------------------------------------------------------------------
+    st.header("📁 Batch CSV Processing")
+    st.info("""
+    Upload any CSV file. The system will look for columns named:
+    **ball_velocity_mps** (required), **condition** (optional, defaults to dry).
+    All other columns will be preserved — your data is returned with our metrics appended.
+    """)
+    
+    uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
+    
+    if uploaded_file:
+        df = pd.read_csv(uploaded_file)
+        st.write(f"📋 Uploaded: {len(df)} rows × {len(df.columns)} columns")
+        
+        # Find velocity column — flexible matching
+        vel_col = None
+        for c in df.columns:
+            if str(c).lower() in ["velocity", "speed", "ball_velocity", "ballvelocity", "ball_velocity_mps"]:
+                vel_col = c
+                break
+        
+        if not vel_col:
+            st.error("❌ Could not find velocity column. Please ensure your CSV has a column named 'velocity' or 'ball_velocity_mps'")
+            return
+        
+        # Find condition column
+        cond_col = None
+        for c in df.columns:
+            if str(c).lower() in ["condition", "weather", "match_condition", "status"]:
+                cond_col = c
+                break
+        
+        st.info(f"✅ Using velocity column: **{vel_col}**" + 
+                (f" | Condition column: **{cond_col}**" if cond_col else " | Defaulting to DRY condition"))
+        
+        # Process all rows
+        results = []
+        for _, row in df.iterrows():
+            v = float(row[vel_col])
+            c = str(row[cond_col]).lower().strip() if cond_col else "dry"
+            if "wet" in c and "synthetic" not in c:
+                if "damp" in c or "light" in c:
+                    c = "damp"
+                else:
+                    c = "wet_synthetic"
+            elif c not in ["dry", "damp", "wet_synthetic"]:
+                c = "dry"
+            
+            metrics = calculate_metrics(v, c)
+            results.append(metrics)
+        
+        # Combine original data + new metrics
+        metrics_df = pd.DataFrame(results)
+        metrics_df = metrics_df.drop(columns=["calibration_used"])
+        output_df = pd.concat([df.reset_index(drop=True), metrics_df], axis=1)
+        
+        st.success(f"✅ Processed {len(df)} rows successfully")
+        st.dataframe(output_df, use_container_width=True)
+        
+        # Download
+        csv = output_df.to_csv(index=False)
+        st.download_button(
+            label="📥 Download Results as CSV",
+            data=csv,
+            file_name=f"ball2head_results_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            type="primary"
+        )
+    
+    st.divider()
+    
+    # -------------------------------------------------------------------------
+    # API INFORMATION
+    # -------------------------------------------------------------------------
+    st.header("🔌 API Integration — For Data Providers")
+    st.code("""
+# Endpoint: http://localhost:8000/v1/calculate
+# Method: POST
+
+{
+  "match_id": "MATCH_001",
+  "timestamp": "00:27:11.050",
+  "ball_velocity_mps": 18.5,
+  "condition": "dry"
 }
 
-# ============================================================
-# 🌧️ BALL CONDITION / WET FACTORS — Phillips et al. (2026), p.9
-# Combines measured water uptake (Table 1) + pressure amplification
-# ============================================================
-CONDITION_FACTORS = {
-    "Dry — Standard (FIFA regulation)": {
-        "factor": 1.00,
-        "description": "Baseline — no adjustment"
-    },
-    "Damp — Morning dew / light drizzle": {
-        "factor": 1.10,
-        "description": "+~5–10% — minimal water absorption"
-    },
-    "Wet — Rain (modern synthetic ball)": {
-        "factor": 1.25,
-        "description": "+~25% — coated ball, moderate water uptake"
-    },
-    "Wet — Heavy rain / older leather ball": {
-        "factor": 1.55,
-        "description": "+~55% — significant water + material effect"
-    }
-}
-
-# ============================================================
-# 🎨 HEADER & INTRODUCTION
-# ============================================================
-st.title("⚽ Ball2Head — Heading Load Calculator")
-st.markdown("""
-> **Estimates peak intracranial pressure and pressure wave duration from ball velocity at impact.**  
-> Calibrated against *Phillips et al. (2026) — Pressure Wave Propagation from Association Football Head Collisions*.  
-> Values are standardised baseline estimates — individual ball behaviour may vary.
-""")
-st.divider()
-
-# ============================================================
-# 📥 INPUT SECTION
-# ============================================================
-st.subheader("📋 Input Parameters")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    ball_size = st.selectbox(
-        "Ball Size / Age Group",
-        options=[3, 4, 5],
-        format_func=lambda x: CALIBRATION[x]["name"],
-        index=2,  # Default = Size 5
-        help="FIFA regulation match ball size — determines mass and calibration constants."
-    )
-
-with col2:
-    velocity_kmh = st.number_input(
-        "Ball Velocity at Impact (km/h)",
-        min_value=1.0,
-        max_value=150.0,
-        value=18.0,
-        step=1.0,
-        help="Inbound ball speed immediately prior to head contact. Convert m/s → km/h: ×3.6"
-    )
-
-with col3:
-    condition_label = st.selectbox(
-        "Ball / Pitch Condition",
-        options=list(CONDITION_FACTORS.keys()),
-        index=0,  # Default = Dry — NO CHANGE to existing behaviour!
-        help="""
-        Adjustment for wet conditions. Phillips et al. (2026) measured up to 317% 
-        higher peak pressure in wet leather balls due to increased mass and 
-        altered material stiffness.
-        """
-    )
-
-# Convert units
-velocity_mps = velocity_kmh / 3.6  # m/s — physics calculation
-
-# Get calibration values
-m = CALIBRATION[ball_size]["mass_kg"]
-k1 = CALIBRATION[ball_size]["k1_kPa_per_J"]
-k2 = CALIBRATION[ball_size]["k2_ms_per_J"]
-wet_factor = CONDITION_FACTORS[condition_label]["factor"]
-
-# ============================================================
-# 🧮 CALCULATION — Physics Layer
-# ============================================================
-# Kinetic Energy: E = ½ m v²
-dry_energy_joules = 0.5 * m * (velocity_mps ** 2)
-
-# Baseline Dry values (for transparency)
-dry_kpa = dry_energy_joules * k1
-dry_ms = dry_energy_joules * k2
-
-# Apply condition factor → Final adjusted values
-adjusted_energy = dry_energy_joules * wet_factor
-adjusted_kpa = dry_kpa * wet_factor
-adjusted_ms = dry_ms * wet_factor
-
-# ============================================================
-# 📊 DISPLAY RESULTS
-# ============================================================
-st.divider()
-st.subheader("📊 Calculated Heading Load")
-
-# Show condition factor notice if wet
-if wet_factor > 1.00:
-    st.info(f"""
-    💡 **Wet condition adjustment applied: ×{wet_factor:.2f}**  
-    Baseline (Dry) values: **{dry_kpa:.1f} kPa** | **{dry_ms:.2f} ms**  
-    Adjusted for {condition_label.split(" — ")[0].lower()}: **+{((wet_factor-1)*100):.0f}%**  
-    *(Phillips et al., 2026 — up to 317% pressure increase measured in wet conditions)*
-    """)
-else:
-    st.success("✅ Using dry regulation ball baseline (FIFA standard) — no wet adjustment applied")
-
-# Main metrics — side by side
-col_a, col_b, col_c = st.columns(3)
-with col_a:
-    st.metric("⚡ Kinetic Energy", f"{adjusted_energy:.1f} J")
-with col_b:
-    st.metric("🧠 Peak Pressure", f"{adjusted_kpa:.1f} kPa")
-with col_c:
-    st.metric("📐 Wave Duration", f"{adjusted_ms:.2f} ms")
-
-# Detailed breakdown table
-with st.expander("📋 View Full Calculation Details"):
-    detail_df = pd.DataFrame([
-        {"Parameter": "Ball Size", "Value": CALIBRATION[ball_size]["name"], "Note": f"Mass = {m*1000:.0f} g (FIFA standard)"},
-        {"Parameter": "Inbound Velocity", "Value": f"{velocity_kmh:.1f} km/h ({velocity_mps:.1f} m/s)", "Note": "Measured pre-impact speed"},
-        {"Parameter": "Ball Condition", "Value": condition_label, "Note": f"Factor applied: ×{wet_factor:.2f}"},
-        {"Parameter": "Baseline Energy (Dry)", "Value": f"{dry_energy_joules:.1f} J", "Note": "E = ½mv²"},
-        {"Parameter": "Calibration k₁", "Value": f"{k1:.2f} kPa/J", "Note": "From Phillips et al. (2026)"},
-        {"Parameter": "Calibration k₂", "Value": f"{k2:.3f} ms/J", "Note": "From PPSI₉₀ Time data"},
-        {"Parameter": "Baseline Pressure (Dry)", "Value": f"{dry_kpa:.1f} kPa", "Note": "Before wet adjustment"},
-        {"Parameter": "Baseline Duration (Dry)", "Value": f"{dry_ms:.2f} ms", "Note": "Before wet adjustment"},
-        {"Parameter": "---", "Value": "---", "Note": "---"},
-        {"Parameter": "✅ Final Energy", "Value": f"{adjusted_energy:.1f} J", "Note": "Adjusted for condition"},
-        {"Parameter": "✅ Final Peak Pressure", "Value": f"{adjusted_kpa:.1f} kPa", "Note": "Adjusted for condition"},
-        {"Parameter": "✅ Final Wave Duration", "Value": f"{adjusted_ms:.2f} ms", "Note": "Adjusted for condition"},
-    ])
-    st.dataframe(detail_df, hide_index=True, use_container_width=True)
-
-# ============================================================
-# 📤 EXPORT SECTION
-# ============================================================
-st.divider()
-st.subheader("📥 Export Result")
-
-export_df = pd.DataFrame({
-    "Timestamp": [pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")],
-    "Ball_Size": [CALIBRATION[ball_size]["name"]],
-    "Velocity_kmh": [round(velocity_kmh, 1)],
-    "Condition": [condition_label],
-    "Condition_Factor": [round(wet_factor, 2)],
-    "Baseline_Dry_Energy_J": [round(dry_energy_joules, 1)],
-    "Baseline_Dry_Pressure_kPa": [round(dry_kpa, 1)],
-    "Baseline_Dry_Duration_ms": [round(dry_ms, 2)],
-    "Adjusted_Energy_J": [round(adjusted_energy, 1)],
-    "Adjusted_Pressure_kPa": [round(adjusted_kpa, 1)],
-    "Adjusted_Duration_ms": [round(adjusted_ms, 2)],
-    "Calibration_k1_kPa_per_J": [round(k1, 2)],
-    "Calibration_k2_ms_per_J": [round(k2, 3)],
-    "Source": ["Phillips et al. (2026) — Ball2Head Framework"]
-})
-
-csv = export_df.to_csv(index=False).encode("utf-8")
-st.download_button(
-    label="📄 Download Result as CSV",
-    data=csv,
-    file_name=f"ball2head_result_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
-    mime="text/csv",
-    type="primary"
-)
-
-# ============================================================
-# 📚 METHODOLOGY & REFERENCES
-# ============================================================
-st.divider()
-with st.expander("📖 Methodology & References"):
-    st.markdown("""
-    ### Methodology
-    1. **Kinetic Energy**: $E_k = \\frac{1}{2}mv^2$ — fundamental Newtonian physics.  
-       $m$ = regulation ball mass (FIFA standard); $v$ = inbound velocity at impact.
-    2. **Pressure Calibration**: $P_{peak} = k_1 \\times E_k$ — derived from peak-to-peak 
-       intracranial pressure measurements in surrogate head model (Phillips et al., 2026).
-    3. **Wave Duration**: $t_{wave} = k_2 \\times E_k$ — derived from PPSI$_{90}$ Time, 
-       the interval over which 90% of signal energy is transferred.
-    4. **Wet Condition Adjustment**: Accounts for both increased mass from water 
-       absorption (+2.2% to +59.9% measured) and altered material stiffness causing 
-       up to 317% higher peak pressure in wet conditions. Factors are conservative 
-       estimates based on published experimental data.
-
-    ### Reference
-    > Phillips, I., Mitchell, S., Lepper, P. & Harland, A. (2026).  
-    > *Pressure wave propagation from association football head collisions.*  
-    > **Proceedings of the Institution of Mechanical Engineers, Part P: Journal of Sports Engineering and Technology.**
-
-    ### Important Notes
-    - Values are **estimates** based on a standard regulation match ball.
-    - Individual ball material, construction, and condition may cause ±50% variation.
-    - Wet condition adjustments are evidence-based estimates — actual values may vary.
-    - Not for clinical diagnosis — intended for exposure monitoring and comparative tracking.
+# Response includes: Energy, Baseline kPa, Adjusted kPa, Duration, Category
+# Calibration: A1/B1 Mean — FIFA 430g — Phillips et al. (2026)
+    """, language="http")
+    
+    st.caption("""
+    All calculations use ONLY Size 5 elite ball calibration (A1/B1 Mean). 
+    No gender adjustments, no head mass assumptions — pure Phillips et al. (2026) proportionality.
     """)
 
-# ============================================================
-# 🦶 FOOTER
-# ============================================================
-st.markdown("""
----
-<div style="text-align: center; color: #666; font-size: 0.9em;">
-    <strong>Ball2Head</strong> — Independent Heading Load Monitoring Framework<br>
-    Based on peer-reviewed research. For educational & clinical use.<br>
-    GitHub: <a href="https://github.com/hansen1002003/Ball2Head-Energy-Only" target="_blank">hansen1002003/Ball2Head-Energy-Only</a>
-</div>
-""", unsafe_allow_html=True)
+
+# =============================================================================
+# RUN BOTH — API + STREAMLIT
+# =============================================================================
+if __name__ == "__main__":
+    # Start FastAPI in background
+    api_thread = threading.Thread(target=run_api, daemon=True)
+    api_thread.start()
+    
+    # Run Streamlit (main thread)
+    run_streamlit()
