@@ -10,13 +10,13 @@ Calibration Source:
 
 Ball Type — C1 Elite Machine-Stitched (Primary Standard):
   • Peak Pressure @ 18 m/s:  5.7 kPa   → k₁ = 0.0818 kPa/J
-  • Rise Time @ 18 m/s:      80 μs      → k₂ = 0.00115 ms/J
+  • Rise Time @ 18 m/s:      80 μs      → k₂ = 0.0036 ms/J
   • Mass: 0.430 kg (FIFA standard)
 
 Core Methodology:
   • Kinetic Energy:       E = ½mv²
   • Peak Pressure:        P = k₁ × E   → k₁ = 0.0818 kPa/J  (C1 — from paper)
-  • Wave Duration:        τ = k₂ × E   → k₂ = 0.00115 ms/J  (C1 — from paper)
+  • Wave Duration:        τ = k₂ × E   → k₂ = 0.0036 ms/J  (C1 — from paper)
   • Brain Load Units:     BLU = P × τ
   • Wet Adjustment:       Damp ×1.10 | Wet Synthetic ×1.25
 
@@ -40,7 +40,7 @@ class PhillipsCalibration:
     # Values DIRECTLY from Phillips et al. (2026) — Table: C1 @ 18 m/s (Dry)
     # Peak Pressure: 5.7 kPa | Rise Time: 80 μs
     k1_KPA_PER_J_DRY = 0.0818   # = 5.7 kPa ÷ 69.66 J  ✅ Paper-validated
-    k2_MS_PER_J_DRY = 0.00115   # = 0.080 ms ÷ 69.66 J ✅ Paper-validated
+    k2_MS_PER_J_DRY = 0.0036   # = 0.080 ms ÷ 69.66 J ✅ Paper-validated
     
     WET_FACTORS = {"dry": 1.00, "damp": 1.10, "wet_synthetic": 1.25}
     
@@ -161,7 +161,7 @@ def run_application():
         
         **Formula:** $E = ½mv²$ → $P = k₁·E$ → $τ = k₂·E$ → **BLU = P × τ**
         - k₁ = 0.0818 kPa/J  (derived from 5.7 kPa ÷ 69.66 J)
-        - k₂ = 0.00115 ms/J (derived from 0.080 ms ÷ 69.66 J)
+        - k₂ = 0.0036 ms/J (derived from 0.080 ms ÷ 69.66 J)
         """)
     
     st.header("📋 Match Information")
