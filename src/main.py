@@ -9,7 +9,7 @@ Calibration Sources:
     • C1 @ 18 m/s = 5.7 kPa | k₁ = 0.0818 kPa/J | k₂ = 0.0036 ms/J
     • Mass: 0.430 kg (FIFA Standard)
 
-  ⚽ KICK — Nunome et al. (2018) — Biomechanics of Instep Soccer Kick
+  ⚽ KICK — Nunome et al. (2024) — Biomechanics of Instep Soccer Kick
     • 20 m/s = 1,900 N | 9.2 ms contact | k_foot = 22.1 N/J | T_foot = 0.107 ms/J
     • Peak Power = Energy ÷ Contact Time (kW)
 
@@ -40,7 +40,7 @@ class DualCalibration:
     HEAD_k1_KPA_PER_J_DRY = 0.0818   # 5.7 kPa ÷ 69.66 J ✅
     HEAD_k2_MS_PER_J_DRY = 0.0036    # 0.250 ms PPSI₉₀ ÷ 69.66 J ✅
     
-    # === KICK — Nunome et al. (2018) — Elite Instep Kick ===
+    # === KICK — Nunome et al. (2024) — Elite Instep Kick ===
     KICK_k_FORCE_PER_J_DRY = 22.1     # 1,900 N ÷ 86.0 J ✅
     KICK_k_TIME_PER_J_DRY = 0.107     # 9.2 ms ÷ 86.0 J ✅
     
@@ -180,7 +180,7 @@ def generate_kick_chart(df: pd.DataFrame) -> tuple:
             "ELITE": "#f39c12",
             "WORLD-CLASS": "#e74c3c"
         },
-        title="<b>⚽ KICK — Peak Shot Power</b><br><sup>Nunome et al. (2018) · Elite Instep Kick Calibration</sup>",
+        title="<b>⚽ KICK — Peak Shot Power</b><br><sup>Nunome et al. (2024) · Elite Instep Kick Calibration</sup>",
         labels={"Peak_Power_kW": "Peak Power (kW)", "Label": "Player & Minute"},
         hover_data={
             "ball_velocity_mps": True,
