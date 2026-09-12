@@ -234,7 +234,7 @@ def run_application():
         - Output: Peak Pressure (kPa) · PPSI₉₀ (ms) · **Brain Load Units — CUMULATIVE RISK**
         - Graph type: 📈 Rising line = total exposure over time
         
-        **⚽ KICK — Nunome et al. (2018):** Biomechanics of instep soccer kicks.
+        **⚽ KICK — Nunome et al. (2024):** Biomechanics of instep soccer kicks.
         - Output: Peak Force (N) · Contact Time (ms) · **Peak Power (kW) — PEAK PERFORMANCE**
         - Graph type: 📊 Individual bars = power of each shot
         """)
