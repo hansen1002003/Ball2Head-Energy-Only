@@ -4,7 +4,6 @@ Ball2Head — Dual-Use Impact Engine
 ====================================
 
 Investigational Research — Hansen Sominabo Kekom
-
 Birmingham Newman University — Final Year Project
 
 Calibration Sources:
@@ -12,21 +11,22 @@ Calibration Sources:
      • EXACT TEST VELOCITY: 18.20 ± 0.27 m/s (dry conditions)
      • 7 ball types (A1–G1) · 3 sizes (5/4/3) · Dry/Damp/Wet
      • A1 = Thermally Bonded Elite — **DEFAULT STANDARD**
-     • C1 = Machine-Stitched Elite — PRIMARY REFERENCE: 5.70 kPa EXACT
-     • ⚠️ B1/D1/E1/F1/G1 values derived from peer-review Figure 3(a)
+     • C1 = Machine-Stitched Elite — PRIMARY REFERENCE
+     • PPSI90 = ∫P²dt → Pa²·s (full energy metric per paper)
+     • PPSI90 Time = rise duration → ms (separate time metric)
 
   ⚽ KICK — Nunome et al. (2024) — Biomechanics of Instep Soccer Kick
      • Independent calibration — separate constants
 
 Core Methodology:
   • Kinetic Energy:       E = ½mv²
-  • HEADING → Brain Load: Peak Pressure (kPa), PPSI90 Duration (ms), BLU
+  • HEADING → Brain Load: Peak Pressure(kPa), PPSI90 Time(ms), PPSI90(Pa²·s), BLU
   • KICK → Shot Power:    Force(N), ContactTime(ms), PeakPower(kW)
 
 Risk Thresholds (Heading): 🟢 0–45 | 🟡 45–90 | 🔴 90–160 BLU
 Performance Tiers (Kick): 🔵 <5kW | 🟢 5–8kW | 🟡 8–12kW | 🔴 >12kW
 
-Version: 4.5.0 — ✅ A1 DEFAULT · Auto-fill missing CSV columns · D1/E1 Swapped
+Version: 4.6.0 — ✅ PPSI90 (Pa²·s) added · PPSI90 Time renamed · A1 default
 
 """
 
@@ -175,7 +175,7 @@ class KickCalibration:
 
 
 # =============================================================================
-# IMPACT CALCULATION
+# IMPACT CALCULATION — WITH PPSI90 FULL ENERGY METRIC
 # =============================================================================
 
 def calculate_impact(velocity_mps: float, impact_type: str,
@@ -196,7 +196,14 @@ def calculate_impact(velocity_mps: float, impact_type: str,
     if impact_type.lower() == "heading":
         total_kpa = cal["k1_kPa_per_J"] * joules
         total_ms = cal["k2_ms_per_J"] * joules
-        brain_load = total_kpa * total_ms
+
+        # ✅ PPSI90 — FULL ENERGY METRIC per Phillips et al. (2026): ∫P²dt → Pa²·s
+        peak_pa = total_kpa * 1000  # convert kPa → Pa
+        duration_s = total_ms / 1000  # convert ms → seconds
+        PPSI90_Pa2s = (peak_pa ** 2) * duration_s
+
+        brain_load = total_kpa * total_ms  # BLU = kPa × ms
+
         if brain_load < 45:
             category = "LOW"
         elif brain_load < 90:
@@ -205,6 +212,7 @@ def calculate_impact(velocity_mps: float, impact_type: str,
             category = "HIGH"
         else:
             category = "ELEVATED"
+
         return {
             "impact_type": "heading",
             "ball_type_id": cal["ball_type_id"],
@@ -214,16 +222,19 @@ def calculate_impact(velocity_mps: float, impact_type: str,
             "ball_velocity_mps": round(velocity, 2),
             "mass_kg": round(cal["mass_kg"], 4),
             "Joules": round(joules, 2),
-            "Total_kPa": round(total_kpa, 2),
-            "PPSI90_ms": round(total_ms, 3),
+            "Peak_Pressure_kPa": round(total_kpa, 2),
+            "PPSI90_Time_ms": round(total_ms, 3),  # ✅ Renamed for clarity
+            "PPSI90_Pa2s": round(PPSI90_Pa2s, 1),   # ✅ NEW — full energy metric
             "Brain_Load_Units": round(brain_load, 4),
             "Load_Category": category
         }
+
     elif impact_type.lower() == "kick":
         kick_cal = KickCalibration.get_kick_constants(cal["mass_kg"], cal["condition"])
         peak_force_N = kick_cal["force_per_J_N"] * joules
         contact_time_ms = kick_cal["time_per_J_ms"] * joules
         peak_power_kW = joules / (contact_time_ms / 1000) if contact_time_ms > 0 else 0
+
         if peak_power_kW < 5:
             perf_cat = "DEVELOPING"
         elif peak_power_kW < 8:
@@ -232,6 +243,7 @@ def calculate_impact(velocity_mps: float, impact_type: str,
             perf_cat = "ELITE"
         else:
             perf_cat = "WORLD-CLASS"
+
         return {
             "impact_type": "kick",
             "ball_type_id": cal["ball_type_id"],
@@ -250,14 +262,16 @@ def calculate_impact(velocity_mps: float, impact_type: str,
 
 
 # =============================================================================
-# CHARTS
+# CHARTS — UPDATED WITH PPSI90 OPTION
 # =============================================================================
 
 def generate_head_chart(df: pd.DataFrame) -> tuple:
     df = df.copy()
     df = df.sort_values(["player_name", "Minute"])
     df["Cumulative_Brain_Load"] = df.groupby("player_name")["Brain_Load_Units"].cumsum().round(2)
+    df["Cumulative_PPSI90_kPa2s"] = df.groupby("player_name")["PPSI90_Pa2s"].cumsum().round(1)
     df["Player_Label"] = df["player_name"] + " (" + df.groupby("player_name")["player_name"].transform("count").astype(str) + " Headers)"
+
     max_load = df["Cumulative_Brain_Load"].max()
     y_max = max(160, round(max_load * 1.1, -1))
     x_max = max(95, round(df["Minute"].max() + 5, -1))
@@ -268,7 +282,14 @@ def generate_head_chart(df: pd.DataFrame) -> tuple:
         df, x="Minute", y="Cumulative_Brain_Load", color="Player_Label", markers=True,
         title=f"<b>🧠 HEADING — Cumulative Brain Load Index</b><br><sup>Phillips et al. (2026) · {ball_type_used} {ball_size_used}</sup>",
         labels={"Minute": "Match Timeline (Minutes)", "Cumulative_Brain_Load": "Cumulative Brain Load (BLU)"},
-        hover_data={"Minute": True, "Cumulative_Brain_Load": ": .2f", "Joules": ": .1f J", "Total_kPa": ": .1f kPa"}
+        hover_data={
+            "Minute": True,
+            "Cumulative_Brain_Load": ": .2f",
+            "Joules": ": .1f J",
+            "Peak_Pressure_kPa": ": .1f kPa",
+            "PPSI90_Time_ms": ": .2f ms",
+            "PPSI90_Pa2s": ": ,.0f Pa²·s"
+        }
     )
     fig.add_hrect(y0=0, y1=45, fillcolor="#2ecc71", opacity=0.06, layer="below", line_width=0)
     fig.add_hrect(y0=45, y1=90, fillcolor="#f1c40f", opacity=0.06, layer="below", line_width=0)
@@ -348,12 +369,13 @@ def run_application():
         match_date = st.text_input("Date", value=pd.Timestamp.now().strftime("%Y-%m-%d"))
     st.divider()
 
-    # ─── METHOD 1: CSV UPLOAD — AUTO-FILL MISSING COLUMNS WITH STANDARD A1 ───
+    # ─── METHOD 1: CSV UPLOAD — AUTO-FILL MISSING COLUMNS ──────────────
     st.header("📁 Method 1: Batch Upload from CSV")
     st.info("""
     ℹ️ **Standard values used where columns missing:**
     ball_type = **A1** (Thermally Bonded Elite) · ball_size = **Size 5 (Elite Adult)** · condition = **dry**
     Required columns: player_name, Minute, ball_velocity_mps, impact_type
+    Output includes: Peak Pressure, PPSI90 Time (ms), PPSI90 (Pa²·s), BLU
     """)
 
     uploaded_file = st.file_uploader("Upload Events CSV", type=["csv"])
@@ -370,7 +392,6 @@ def run_application():
         bsize_col = next((c for c in df_raw.columns if "ball_size" in c.lower()), None)
         cond_col = next((c for c in df_raw.columns if "cond" in c.lower()), None)
 
-        # Check minimum required
         if not all([vel_col, name_col, time_col, type_col]):
             st.error("❌ Missing required columns! Need at minimum: player_name, Minute, ball_velocity_mps, impact_type")
             return
@@ -402,12 +423,13 @@ def run_application():
             st.warning(f"⚠️ {len(errors)} rows skipped — check format")
         if results:
             df_calc = pd.DataFrame(results)
-            st.success(f"✅ {len(df_calc)} impacts calculated")
+            st.success(f"✅ {len(df_calc)} impacts calculated — includes PPSI90 (Pa²·s)")
+
             head_df = df_calc[df_calc["impact_type"] == "heading"].reset_index(drop=True)
             kick_df = df_calc[df_calc["impact_type"] == "kick"].reset_index(drop=True)
 
             if len(head_df) > 0:
-                st.subheader("🧠 Heading — Cumulative Brain Load")
+                st.subheader("🧠 Heading — Cumulative Brain Load & PPSI90")
                 st.dataframe(head_df, use_container_width=True)
                 fig_head, _ = generate_head_chart(head_df)
                 st.plotly_chart(fig_head, use_container_width=True)
@@ -430,7 +452,7 @@ def run_application():
 
     st.divider()
 
-    # ─── METHOD 2: MANUAL INPUT — A1 / Size5 / dry BY DEFAULT ───────────
+    # ─── METHOD 2: MANUAL INPUT ───────────────────────────────────────
     st.header("✍️ Method 2: Enter Impact Manually")
     with st.form("manual_entry_form"):
         col_a, col_b, col_c = st.columns(3)
@@ -439,30 +461,30 @@ def run_application():
             minute = st.number_input("Match Minute", min_value=0.0, max_value=120.0, step=1.0)
             impact_type = st.selectbox("Impact Type", ["heading", "kick"])
             ball_type = st.selectbox("Ball Type",
-                ["A1 — Thermally Bonded Elite",   # ✅ DEFAULT — INDEX 0
+                ["A1 — Thermally Bonded Elite",
                  "B1 — Fuse-Welded Elite",
                  "C1 — Machine-Stitched Elite",
                  "D1 — Hand-Stitched Elite",
                  "E1 — Synthetic Moulded",
                  "F1 — Laceless Leather",
                  "G1 — Laced Leather"],
-                index=0)  # ✅ A1 is now DEFAULT
+                index=0)
 
         with col_b:
             ball_size = st.selectbox("Ball Size",
-                ["Size 5 (Elite Adult)",  # ✅ DEFAULT
+                ["Size 5 (Elite Adult)",
                  "Size 4 (U12–U14)",
                  "Size 3 (U8–U10)"],
-                index=0)  # ✅ Size5 is DEFAULT
+                index=0)
 
             velocity = st.number_input("Ball Velocity (m/s)", min_value=5.0, max_value=40.0, step=0.5, value=18.20)
             condition = st.selectbox("Match Condition",
                 ["dry", "damp", "wet_synthetic"],
-                index=0)  # ✅ dry is DEFAULT
+                index=0)
 
         with col_c:
             st.markdown("<br>", unsafe_allow_html=True)
-            st.info("✅ Defaults: A1 · Size 5 · dry — change if needed")
+            st.info("✅ Defaults: A1 · Size 5 · dry · Outputs PPSI90 (Pa²·s)")
             add_btn = st.form_submit_button("➕ Add to Ledger", type="primary", use_container_width=True)
 
         if add_btn:
@@ -476,7 +498,7 @@ def run_application():
                     calc["Minute"] = minute
                     st.session_state.entries.append(calc)
                     if impact_type == "heading":
-                        st.success(f"✅ 🧠 {name} — {btype_id} · {velocity} m/s → {calc['Total_kPa']} kPa | {calc['Brain_Load_Units']} BLU")
+                        st.success(f"✅ 🧠 {name} — {btype_id} · {velocity} m/s → {calc['Peak_Pressure_kPa']} kPa | PPSI90: {calc['PPSI90_Pa2s']:,} Pa²·s | {calc['Brain_Load_Units']} BLU")
                     else:
                         st.success(f"✅ ⚽ {name} — {btype_id} · {velocity} m/s → {calc['Peak_Power_kW']} kW | {calc['Performance_Category']}")
                 else:
@@ -493,7 +515,7 @@ def run_application():
         kick_entries = df_all[df_all["impact_type"] == "kick"].reset_index(drop=True)
 
         if len(head_entries) > 0:
-            st.subheader("🧠 Heading — Cumulative Brain Load")
+            st.subheader("🧠 Heading — Cumulative Brain Load & PPSI90")
             fig_head, _ = generate_head_chart(head_entries)
             st.plotly_chart(fig_head, use_container_width=True)
             c1, c2 = st.columns(2)
