@@ -1,16 +1,19 @@
 """
 Ball2Head — Dual-Use Impact Engine
+
 ====================================
 
 Investigational Research — Hansen Sominabo Kekom
+
 Birmingham Newman University — Final Year Project
 
 Calibration Sources:
   🧠 HEADING — Phillips, I. et al. (2026) — Pressure wave propagation
      • EXACT TEST VELOCITY: 18.20 ± 0.27 m/s (dry conditions)
      • 7 ball types (A1–G1) · 3 sizes (5/4/3) · Dry/Damp/Wet
+     • A1 = Thermally Bonded Elite — **DEFAULT STANDARD**
      • C1 = Machine-Stitched Elite — PRIMARY REFERENCE: 5.70 kPa EXACT
-     • ⚠️ A1/B1/D1/E1/F1/G1 values derived from peer-review Figure 3(a)
+     • ⚠️ B1/D1/E1/F1/G1 values derived from peer-review Figure 3(a)
 
   ⚽ KICK — Nunome et al. (2024) — Biomechanics of Instep Soccer Kick
      • Independent calibration — separate constants
@@ -23,7 +26,8 @@ Core Methodology:
 Risk Thresholds (Heading): 🟢 0–45 | 🟡 45–90 | 🔴 90–160 BLU
 Performance Tiers (Kick): 🔵 <5kW | 🟢 5–8kW | 🟡 8–12kW | 🔴 >12kW
 
-Version: 4.4.0 — ✅ Ball Names Fixed · D1/E1 Swapped · G1 Corrected · No Calibration Labels · CSV: All Fields Required
+Version: 4.5.0 — ✅ A1 DEFAULT · Auto-fill missing CSV columns · D1/E1 Swapped
+
 """
 
 import streamlit as st
@@ -35,11 +39,6 @@ import base64
 # =============================================================================
 # PHILLIPS ET AL. (2026) — BALL CALIBRATION DATABASE
 # =============================================================================
-# RULE: Each ball uses ONLY its OWN k₁ and k₂ — NEVER shared.
-# VALUES CORRECTED per peer-review Figure 3(a):
-#   A1 = Thermally Bonded Elite  |  B1 = Fuse-Welded Elite  |  C1 = Machine-Stitched Elite
-#   D1 = Hand-Stitched Elite (~16 kPa)  |  E1 = Synthetic Moulded (~31 kPa — TALLEST)
-#   F1 = Laceless Leather  |  G1 = Laced Leather (~0.49 ms — LONGEST duration)
 
 class BallCalibration:
     """Complete calibration — 7 ball types × 3 sizes × 3 conditions."""
@@ -73,12 +72,11 @@ class BallCalibration:
             "R2_pressure": 0.994,
             "R2_duration": 0.992
         },
-        # ✅ D1/E1 SWAPPED — D1 ≈16 kPa, E1 ≈31 kPa (tallest bar)
         "D1": {
             "name": "Hand-Stitched Elite",
             "construction": "Hand-Stitched — Traditional Match",
             "mass_dry_kg": 0.4243,
-            "k1_kPa_per_J": 0.12800,   # ✅ ~16 kPa @ 18.2 m/s
+            "k1_kPa_per_J": 0.12800,
             "k2_ms_per_J": 0.00317,
             "R2_pressure": 0.982,
             "R2_duration": 0.980
@@ -87,7 +85,7 @@ class BallCalibration:
             "name": "Synthetic Moulded",
             "construction": "Moulded — Training/Recreational",
             "mass_dry_kg": 0.4370,
-            "k1_kPa_per_J": 0.25200,   # ✅ ~31 kPa @ 18.2 m/s (tallest)
+            "k1_kPa_per_J": 0.25200,
             "k2_ms_per_J": 0.00330,
             "R2_pressure": 0.989,
             "R2_duration": 0.986
@@ -101,13 +99,12 @@ class BallCalibration:
             "R2_pressure": 0.985,
             "R2_duration": 0.981
         },
-        # ✅ G1 DURATION CORRECTED — ~0.49 ms (LONGEST of all balls)
         "G1": {
             "name": "Laced Leather",
             "construction": "Leather — Vintage Pre-1970s",
             "mass_dry_kg": 0.4496,
             "k1_kPa_per_J": 0.04800,
-            "k2_ms_per_J": 0.00775,   # ✅ ~0.49 ms @ 18.2 m/s
+            "k2_ms_per_J": 0.00775,
             "R2_pressure": 0.980,
             "R2_duration": 0.978
         },
@@ -129,25 +126,20 @@ class BallCalibration:
 
     @classmethod
     def get_ball_calibration(cls, ball_type: str, ball_size: str, condition: str) -> dict:
-        """Retrieve calibration — NO DEFAULTS. All 3 params required."""
         bt = ball_type.upper().strip()
         if bt not in cls.BALL_TYPES:
-            raise ValueError(f"Invalid ball_type: {ball_type}. Must be one of A1,B1,C1,D1,E1,F1,G1")
+            raise ValueError(f"Invalid ball_type: {ball_type}. Must be A1,B1,C1,D1,E1,F1,G1")
         ball = cls.BALL_TYPES[bt]
-
         if ball_size not in cls.BALL_SIZES:
             raise ValueError(f"Invalid ball_size: {ball_size}. Must be Size 5/4/3")
         size = cls.BALL_SIZES[ball_size]
-
         cond_key = str(condition).lower().strip()
         if cond_key not in cls.WET_FACTORS:
             raise ValueError(f"Invalid condition: {condition}. Must be dry/damp/wet_synthetic")
         wet = cls.WET_FACTORS[cond_key]
-
         mass_kg = ball["mass_dry_kg"] * size["mass_factor"] * wet["mass_mult"]
         k1 = ball["k1_kPa_per_J"] * wet["cal_mult"]
         k2 = ball["k2_ms_per_J"] * wet["cal_mult"]
-
         return {
             "ball_type_id": bt,
             "ball_name": ball["name"],
@@ -161,9 +153,11 @@ class BallCalibration:
             "vel_range": size["vel_range"]
         }
 
+
 # =============================================================================
 # NUNOME ET AL. (2024) — KICK CALIBRATION
 # =============================================================================
+
 class KickCalibration:
     """Shot power constants — Nunome et al. (2024)."""
     KICK_k_FORCE_PER_J_DRY = 22.1
@@ -179,19 +173,19 @@ class KickCalibration:
             "time_per_J_ms": round(cls.KICK_k_TIME_PER_J_DRY * mass_ratio * wet_mult, 5)
         }
 
+
 # =============================================================================
 # IMPACT CALCULATION
 # =============================================================================
+
 def calculate_impact(velocity_mps: float, impact_type: str,
                      ball_type: str, ball_size: str, condition: str) -> dict | None:
-    """Calculate impact — NO DEFAULTS. All parameters required."""
     try:
         velocity = float(velocity_mps)
         if velocity <= 0:
             return None
     except (ValueError, TypeError):
         return None
-
     try:
         cal = BallCalibration.get_ball_calibration(ball_type, ball_size, condition)
     except ValueError:
@@ -203,7 +197,6 @@ def calculate_impact(velocity_mps: float, impact_type: str,
         total_kpa = cal["k1_kPa_per_J"] * joules
         total_ms = cal["k2_ms_per_J"] * joules
         brain_load = total_kpa * total_ms
-
         if brain_load < 45:
             category = "LOW"
         elif brain_load < 90:
@@ -212,7 +205,6 @@ def calculate_impact(velocity_mps: float, impact_type: str,
             category = "HIGH"
         else:
             category = "ELEVATED"
-
         return {
             "impact_type": "heading",
             "ball_type_id": cal["ball_type_id"],
@@ -227,13 +219,11 @@ def calculate_impact(velocity_mps: float, impact_type: str,
             "Brain_Load_Units": round(brain_load, 4),
             "Load_Category": category
         }
-
     elif impact_type.lower() == "kick":
         kick_cal = KickCalibration.get_kick_constants(cal["mass_kg"], cal["condition"])
         peak_force_N = kick_cal["force_per_J_N"] * joules
         contact_time_ms = kick_cal["time_per_J_ms"] * joules
         peak_power_kW = joules / (contact_time_ms / 1000) if contact_time_ms > 0 else 0
-
         if peak_power_kW < 5:
             perf_cat = "DEVELOPING"
         elif peak_power_kW < 8:
@@ -242,7 +232,6 @@ def calculate_impact(velocity_mps: float, impact_type: str,
             perf_cat = "ELITE"
         else:
             perf_cat = "WORLD-CLASS"
-
         return {
             "impact_type": "kick",
             "ball_type_id": cal["ball_type_id"],
@@ -257,12 +246,13 @@ def calculate_impact(velocity_mps: float, impact_type: str,
             "Peak_Power_kW": round(peak_power_kW, 2),
             "Performance_Category": perf_cat
         }
-
     return None
+
 
 # =============================================================================
 # CHARTS
 # =============================================================================
+
 def generate_head_chart(df: pd.DataFrame) -> tuple:
     df = df.copy()
     df = df.sort_values(["player_name", "Minute"])
@@ -271,7 +261,7 @@ def generate_head_chart(df: pd.DataFrame) -> tuple:
     max_load = df["Cumulative_Brain_Load"].max()
     y_max = max(160, round(max_load * 1.1, -1))
     x_max = max(95, round(df["Minute"].max() + 5, -1))
-    ball_type_used = df["ball_type_id"].iloc[0] if "ball_type_id" in df.columns else "C1"
+    ball_type_used = df["ball_type_id"].iloc[0] if "ball_type_id" in df.columns else "A1"
     ball_size_used = df["ball_size"].iloc[0] if "ball_size" in df.columns else "Size 5"
 
     fig = px.line(
@@ -280,11 +270,9 @@ def generate_head_chart(df: pd.DataFrame) -> tuple:
         labels={"Minute": "Match Timeline (Minutes)", "Cumulative_Brain_Load": "Cumulative Brain Load (BLU)"},
         hover_data={"Minute": True, "Cumulative_Brain_Load": ": .2f", "Joules": ": .1f J", "Total_kPa": ": .1f kPa"}
     )
-
     fig.add_hrect(y0=0, y1=45, fillcolor="#2ecc71", opacity=0.06, layer="below", line_width=0)
     fig.add_hrect(y0=45, y1=90, fillcolor="#f1c40f", opacity=0.06, layer="below", line_width=0)
     fig.add_hrect(y0=90, y1=160, fillcolor="#e74c3c", opacity=0.06, layer="below", line_width=0)
-
     fig.update_layout(
         xaxis=dict(range=[0, x_max], dtick=10),
         yaxis=dict(range=[0, y_max]),
@@ -299,7 +287,7 @@ def generate_kick_chart(df: pd.DataFrame) -> tuple:
     df = df.copy()
     df = df.sort_values("Minute")
     df["Label"] = df["player_name"] + " — " + df["Minute"].astype(str) + "'"
-    ball_type_used = df["ball_type_id"].iloc[0] if "ball_type_id" in df.columns else "C1"
+    ball_type_used = df["ball_type_id"].iloc[0] if "ball_type_id" in df.columns else "A1"
     ball_size_used = df["ball_size"].iloc[0] if "ball_size" in df.columns else "Size 5"
 
     fig = px.bar(
@@ -314,33 +302,36 @@ def generate_kick_chart(df: pd.DataFrame) -> tuple:
         labels={"Peak_Power_kW": "Peak Power (kW)", "Label": "Player & Minute"},
         hover_data={"ball_velocity_mps": True, "Peak_Force_N": True, "Contact_Time_ms": True, "Joules": True}
     )
-
     fig.update_layout(
         xaxis_title="", height=500, margin=dict(l=20, r=20, t=60, b=60),
         showlegend=True, legend_title="Performance Tier"
     )
     return fig, df
 
+
 # =============================================================================
 # HTML DOWNLOAD
 # =============================================================================
+
 def get_html_download_link(fig, filename="Interactive_Chart.html", button_text="📄 Download Interactive Graph"):
     html_content = fig.to_html(include_plotlyjs="cdn", full_html=True)
     b64 = base64.b64encode(html_content.encode()).decode()
     href = f'''
     <a href="data:text/html;charset=utf-8;base64,{b64}" download="{filename}" 
        style="display:inline-block; padding:0.5rem 1rem; color:#ffffff; 
-               background:linear-gradient(90deg, #4CAF50, #2196F3); 
-               border-radius:0.5rem; text-decoration:none; font-weight:600; 
-               box-shadow:0 2px 6px rgba(0,0,0,0.15); margin: 0.5rem 0;">
+              background:linear-gradient(90deg, #4CAF50, #2196F3); 
+              border-radius:0.5rem; text-decoration:none; font-weight:600; 
+              box-shadow:0 2px 6px rgba(0,0,0,0.15); margin: 0.5rem 0;">
         {button_text}
     </a>
     '''
     return href
 
+
 # =============================================================================
 # MAIN APPLICATION
 # =============================================================================
+
 def run_application():
     st.set_page_config(page_title="Ball2Head — Dual Impact Engine", layout="wide")
     if "entries" not in st.session_state:
@@ -357,22 +348,20 @@ def run_application():
         match_date = st.text_input("Date", value=pd.Timestamp.now().strftime("%Y-%m-%d"))
     st.divider()
 
-    # ─── METHOD 1: CSV UPLOAD — ALL FIELDS REQUIRED, NO DEFAULTS ───────
+    # ─── METHOD 1: CSV UPLOAD — AUTO-FILL MISSING COLUMNS WITH STANDARD A1 ───
     st.header("📁 Method 1: Batch Upload from CSV")
-    st.warning("""
-    ⚠️ **ALL columns REQUIRED — NO DEFAULTS will be applied**
-
-    **Required Columns:** player_name, Minute, ball_velocity_mps, impact_type, **ball_type, ball_size, condition**
-
-    ball_type: A1, B1, C1, D1, E1, F1, G1
-    ball_size: Size 5 (Elite Adult), Size 4 (U12–U14), Size 3 (U8–U10)
-    condition: dry, damp, wet_synthetic
+    st.info("""
+    ℹ️ **Standard values used where columns missing:**
+    ball_type = **A1** (Thermally Bonded Elite) · ball_size = **Size 5 (Elite Adult)** · condition = **dry**
+    Required columns: player_name, Minute, ball_velocity_mps, impact_type
     """)
 
     uploaded_file = st.file_uploader("Upload Events CSV", type=["csv"])
+
     if uploaded_file:
         df_raw = pd.read_csv(uploaded_file)
 
+        # Smart column detection
         vel_col = next((c for c in df_raw.columns if "vel" in c.lower() or "speed" in c.lower()), None)
         name_col = next((c for c in df_raw.columns if "name" in c.lower() or "player" in c.lower()), None)
         time_col = next((c for c in df_raw.columns if "min" in c.lower() or "time" in c.lower()), None)
@@ -381,20 +370,23 @@ def run_application():
         bsize_col = next((c for c in df_raw.columns if "ball_size" in c.lower()), None)
         cond_col = next((c for c in df_raw.columns if "cond" in c.lower()), None)
 
-        required = [vel_col, name_col, time_col, type_col, btype_col, bsize_col, cond_col]
-        if not all(required):
-            st.error("❌ Missing required columns! Need: player_name, Minute, ball_velocity_mps, impact_type, ball_type, ball_size, condition")
+        # Check minimum required
+        if not all([vel_col, name_col, time_col, type_col]):
+            st.error("❌ Missing required columns! Need at minimum: player_name, Minute, ball_velocity_mps, impact_type")
             return
 
         results = []
         errors = []
+
         for idx, row in df_raw.iterrows():
             try:
                 itype = str(row[type_col]).lower().strip()
-                btype = str(row[btype_col]).upper().strip()
-                bsize = str(row[bsize_col]).strip()
-                cond = str(row[cond_col]).lower().strip()
                 vel = float(row[vel_col])
+
+                # Auto-fill missing columns with STANDARD A1 / Size5 / dry
+                btype = str(row[btype_col]).upper().strip() if btype_col else "A1"
+                bsize = str(row[bsize_col]).strip() if bsize_col else "Size 5 (Elite Adult)"
+                cond = str(row[cond_col]).lower().strip() if cond_col else "dry"
 
                 calc = calculate_impact(vel, itype, btype, bsize, cond)
                 if calc:
@@ -411,7 +403,6 @@ def run_application():
         if results:
             df_calc = pd.DataFrame(results)
             st.success(f"✅ {len(df_calc)} impacts calculated")
-
             head_df = df_calc[df_calc["impact_type"] == "heading"].reset_index(drop=True)
             kick_df = df_calc[df_calc["impact_type"] == "kick"].reset_index(drop=True)
 
@@ -439,7 +430,7 @@ def run_application():
 
     st.divider()
 
-    # ─── METHOD 2: MANUAL INPUT ───────────────────────────────────────
+    # ─── METHOD 2: MANUAL INPUT — A1 / Size5 / dry BY DEFAULT ───────────
     st.header("✍️ Method 2: Enter Impact Manually")
     with st.form("manual_entry_form"):
         col_a, col_b, col_c = st.columns(3)
@@ -448,24 +439,30 @@ def run_application():
             minute = st.number_input("Match Minute", min_value=0.0, max_value=120.0, step=1.0)
             impact_type = st.selectbox("Impact Type", ["heading", "kick"])
             ball_type = st.selectbox("Ball Type",
-                ["A1 — Thermally Bonded Elite",   # ✅ NAME CORRECTED
+                ["A1 — Thermally Bonded Elite",   # ✅ DEFAULT — INDEX 0
                  "B1 — Fuse-Welded Elite",
                  "C1 — Machine-Stitched Elite",
                  "D1 — Hand-Stitched Elite",
                  "E1 — Synthetic Moulded",
                  "F1 — Laceless Leather",
                  "G1 — Laced Leather"],
-                index=2)
+                index=0)  # ✅ A1 is now DEFAULT
+
         with col_b:
             ball_size = st.selectbox("Ball Size",
-                ["Size 5 (Elite Adult)",
+                ["Size 5 (Elite Adult)",  # ✅ DEFAULT
                  "Size 4 (U12–U14)",
-                 "Size 3 (U8–U10)"])
+                 "Size 3 (U8–U10)"],
+                index=0)  # ✅ Size5 is DEFAULT
+
             velocity = st.number_input("Ball Velocity (m/s)", min_value=5.0, max_value=40.0, step=0.5, value=18.20)
-            condition = st.selectbox("Match Condition", ["dry", "damp", "wet_synthetic"])
+            condition = st.selectbox("Match Condition",
+                ["dry", "damp", "wet_synthetic"],
+                index=0)  # ✅ dry is DEFAULT
+
         with col_c:
             st.markdown("<br>", unsafe_allow_html=True)
-            st.info("All values required — no defaults applied")
+            st.info("✅ Defaults: A1 · Size 5 · dry — change if needed")
             add_btn = st.form_submit_button("➕ Add to Ledger", type="primary", use_container_width=True)
 
         if add_btn:
