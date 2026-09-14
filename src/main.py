@@ -1,8 +1,6 @@
 """
 Ball2Head — Dual-Use Impact Engine
-
 ====================================
-
 Investigational Research — Hansen Sominabo Kekom
 Birmingham Newman University — Final Year Project
 
@@ -12,6 +10,8 @@ Calibration Sources:
      • 7 ball types (A1–G1) · 3 sizes (5/4/3) · Dry/Damp/Wet
      • A1 = Thermally Bonded Elite — **DEFAULT STANDARD**
      • C1 = Machine-Stitched Elite — PRIMARY REFERENCE
+     • Water uptake per ball type from paper Table 1 — NOT uniform scaling
+     • Leather balls (F1,G1): pressure & PPSI amplified beyond mass effect
      • PPSI90 = ∫P²dt → Pa²·s (full energy metric per paper)
      • PPSI90 Time = rise duration → ms (separate time metric)
 
@@ -26,10 +26,8 @@ Core Methodology:
 Risk Thresholds (Heading): 🟢 0–45 | 🟡 45–90 | 🔴 90–160 BLU
 Performance Tiers (Kick): 🔵 <5kW | 🟢 5–8kW | 🟡 8–12kW | 🔴 >12kW
 
-Version: 4.6.0 — ✅ PPSI90 (Pa²·s) added · PPSI90 Time renamed · A1 default
-
+Version: 4.7.0 — ✅ Per-ball moisture factors from Phillips Table 1
 """
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -39,9 +37,10 @@ import base64
 # =============================================================================
 # PHILLIPS ET AL. (2026) — BALL CALIBRATION DATABASE
 # =============================================================================
-
 class BallCalibration:
-    """Complete calibration — 7 ball types × 3 sizes × 3 conditions."""
+    """Complete calibration — 7 ball types × 3 sizes × 3 conditions.
+    Moisture uptake values DIRECTLY from Phillips Table 1 (NOT uniform guesses).
+    Leather balls get additional amplification per paper findings."""
 
     # === BALL TYPE DEFINITIONS — Size 5, Dry @ 18.20 m/s ===
     BALL_TYPES = {
@@ -52,7 +51,9 @@ class BallCalibration:
             "k1_kPa_per_J": 0.18360,
             "k2_ms_per_J": 0.00337,
             "R2_pressure": 0.991,
-            "R2_duration": 0.988
+            "R2_duration": 0.988,
+            "water_uptake_pct": 2.6,     # ✅ Phillips Table 1
+            "is_leather": False
         },
         "B1": {
             "name": "Fuse-Welded Elite",
@@ -61,7 +62,9 @@ class BallCalibration:
             "k1_kPa_per_J": 0.17800,
             "k2_ms_per_J": 0.00327,
             "R2_pressure": 0.987,
-            "R2_duration": 0.984
+            "R2_duration": 0.984,
+            "water_uptake_pct": 2.2,     # ✅ Phillips Table 1
+            "is_leather": False
         },
         "C1": {
             "name": "Machine-Stitched Elite",
@@ -70,7 +73,9 @@ class BallCalibration:
             "k1_kPa_per_J": 0.08052,
             "k2_ms_per_J": 0.00351,
             "R2_pressure": 0.994,
-            "R2_duration": 0.992
+            "R2_duration": 0.992,
+            "water_uptake_pct": 6.9,     # ✅ Phillips Table 1
+            "is_leather": False
         },
         "D1": {
             "name": "Hand-Stitched Elite",
@@ -79,7 +84,9 @@ class BallCalibration:
             "k1_kPa_per_J": 0.12800,
             "k2_ms_per_J": 0.00317,
             "R2_pressure": 0.982,
-            "R2_duration": 0.980
+            "R2_duration": 0.980,
+            "water_uptake_pct": 10.4,    # ✅ Phillips Table 1 (max synthetic)
+            "is_leather": False
         },
         "E1": {
             "name": "Synthetic Moulded",
@@ -88,7 +95,9 @@ class BallCalibration:
             "k1_kPa_per_J": 0.25200,
             "k2_ms_per_J": 0.00330,
             "R2_pressure": 0.989,
-            "R2_duration": 0.986
+            "R2_duration": 0.986,
+            "water_uptake_pct": 1.4,     # ✅ Phillips Table 1 (min uptake)
+            "is_leather": False
         },
         "F1": {
             "name": "Laceless Leather",
@@ -97,7 +106,11 @@ class BallCalibration:
             "k1_kPa_per_J": 0.07910,
             "k2_ms_per_J": 0.00303,
             "R2_pressure": 0.985,
-            "R2_duration": 0.981
+            "R2_duration": 0.981,
+            "water_uptake_pct": 34.3,    # ✅ Phillips Table 1
+            "is_leather": True,
+            "pressure_amp_wet": 2.77,     # ✅ Paper finding: +277%
+            "PPSI_amp_wet": 8.36          # ✅ Paper finding: +836%
         },
         "G1": {
             "name": "Laced Leather",
@@ -106,7 +119,11 @@ class BallCalibration:
             "k1_kPa_per_J": 0.04800,
             "k2_ms_per_J": 0.00775,
             "R2_pressure": 0.980,
-            "R2_duration": 0.978
+            "R2_duration": 0.978,
+            "water_uptake_pct": 59.9,    # ✅ Phillips Table 1 (max uptake)
+            "is_leather": True,
+            "pressure_amp_wet": 3.17,     # ✅ Paper finding: +317%
+            "PPSI_amp_wet": 15.19         # ✅ Paper finding: +1519%
         },
     }
 
@@ -117,12 +134,44 @@ class BallCalibration:
         "Size 3 (U8–U10)":      {"mass_factor": 0.78, "vel_range": "10–15 m/s"}
     }
 
-    # === MOISTURE / WEATHER FACTORS ===
-    WET_FACTORS = {
-        "dry":           {"mass_mult": 1.00, "cal_mult": 1.00},
-        "damp":          {"mass_mult": 1.10, "cal_mult": 1.00},
-        "wet_synthetic": {"mass_mult": 1.25, "cal_mult": 1.00}
-    }
+    # === MOISTURE MULTIPLIERS — Damp = 50% of full uptake; Wet = 100% uptake ===
+    @classmethod
+    def get_moisture_factors(cls, ball_type_id: str, condition: str) -> dict:
+        """Returns mass multiplier and leather amplification factors from Phillips data."""
+        ball = cls.BALL_TYPES[ball_type_id]
+        uptake_pct = ball["water_uptake_pct"]
+
+        if condition == "dry":
+            mass_mult = 1.00
+            pressure_amp = 1.00
+            PPSI_amp = 1.00
+        elif condition == "damp":
+            # Damp = half saturation uptake
+            mass_mult = 1.00 + (uptake_pct / 100.0) * 0.5
+            pressure_amp = 1.00  # Paper only reports full wet amplification
+            PPSI_amp = 1.00
+        elif condition == "wet":
+            # Full saturation — use actual uptake % per ball
+            mass_mult = 1.00 + (uptake_pct / 100.0)
+            # Leather balls: apply paper's measured amplification beyond mass
+            if ball.get("is_leather", False):
+                pressure_amp = ball.get("pressure_amp_wet", 1.00)
+                PPSI_amp = ball.get("PPSI_amp_wet", 1.00)
+            else:
+                # Synthetic: pressure scales with mass only (some may decrease per paper)
+                pressure_amp = mass_mult
+                PPSI_amp = mass_mult
+        else:
+            mass_mult = 1.00
+            pressure_amp = 1.00
+            PPSI_amp = 1.00
+
+        return {
+            "mass_mult": round(mass_mult, 4),
+            "pressure_amp": round(pressure_amp, 3),
+            "PPSI_amp": round(PPSI_amp, 3),
+            "uptake_pct": uptake_pct
+        }
 
     @classmethod
     def get_ball_calibration(cls, ball_type: str, ball_size: str, condition: str) -> dict:
@@ -134,12 +183,16 @@ class BallCalibration:
             raise ValueError(f"Invalid ball_size: {ball_size}. Must be Size 5/4/3")
         size = cls.BALL_SIZES[ball_size]
         cond_key = str(condition).lower().strip()
-        if cond_key not in cls.WET_FACTORS:
-            raise ValueError(f"Invalid condition: {condition}. Must be dry/damp/wet_synthetic")
-        wet = cls.WET_FACTORS[cond_key]
-        mass_kg = ball["mass_dry_kg"] * size["mass_factor"] * wet["mass_mult"]
-        k1 = ball["k1_kPa_per_J"] * wet["cal_mult"]
-        k2 = ball["k2_ms_per_J"] * wet["cal_mult"]
+        if cond_key not in ["dry", "damp", "wet"]:
+            raise ValueError(f"Invalid condition: {condition}. Must be dry/damp/wet")
+
+        mf = cls.get_moisture_factors(bt, cond_key)
+        mass_kg = ball["mass_dry_kg"] * size["mass_factor"] * mf["mass_mult"]
+
+        # k1/k2 constants are per-ball — NOT changed by moisture
+        k1 = ball["k1_kPa_per_J"]
+        k2 = ball["k2_ms_per_J"]
+
         return {
             "ball_type_id": bt,
             "ball_name": ball["name"],
@@ -150,14 +203,16 @@ class BallCalibration:
             "k2_ms_per_J": round(k2, 6),
             "R2_pressure": ball["R2_pressure"],
             "R2_duration": ball["R2_duration"],
-            "vel_range": size["vel_range"]
+            "vel_range": size["vel_range"],
+            "mass_mult": mf["mass_mult"],
+            "pressure_amp": mf["pressure_amp"],
+            "PPSI_amp": mf["PPSI_amp"],
+            "water_uptake_pct": mf["uptake_pct"]
         }
-
 
 # =============================================================================
 # NUNOME ET AL. (2024) — KICK CALIBRATION
 # =============================================================================
-
 class KickCalibration:
     """Shot power constants — Nunome et al. (2024)."""
     KICK_k_FORCE_PER_J_DRY = 22.1
@@ -165,27 +220,25 @@ class KickCalibration:
     KICK_MASS_REF_KG = 0.430
 
     @classmethod
-    def get_kick_constants(cls, ball_mass_kg: float, condition: str) -> dict:
+    def get_kick_constants(cls, ball_mass_kg: float, mass_mult: float) -> dict:
         mass_ratio = ball_mass_kg / cls.KICK_MASS_REF_KG
-        wet_mult = BallCalibration.WET_FACTORS.get(condition, {}).get("cal_mult", 1.00)
         return {
-            "force_per_J_N": round(cls.KICK_k_FORCE_PER_J_DRY * mass_ratio * wet_mult, 3),
-            "time_per_J_ms": round(cls.KICK_k_TIME_PER_J_DRY * mass_ratio * wet_mult, 5)
+            "force_per_J_N": round(cls.KICK_k_FORCE_PER_J_DRY * mass_ratio, 3),
+            "time_per_J_ms": round(cls.KICK_k_TIME_PER_J_DRY * mass_ratio, 5)
         }
 
-
 # =============================================================================
-# IMPACT CALCULATION — WITH PPSI90 FULL ENERGY METRIC
+# IMPACT CALCULATION — WITH PHILLIPS-ALIGNED MOISTURE AMPLIFICATION
 # =============================================================================
-
 def calculate_impact(velocity_mps: float, impact_type: str,
-                     ball_type: str, ball_size: str, condition: str) -> dict | None:
+                      ball_type: str, ball_size: str, condition: str) -> dict | None:
     try:
         velocity = float(velocity_mps)
         if velocity <= 0:
             return None
     except (ValueError, TypeError):
         return None
+
     try:
         cal = BallCalibration.get_ball_calibration(ball_type, ball_size, condition)
     except ValueError:
@@ -194,15 +247,20 @@ def calculate_impact(velocity_mps: float, impact_type: str,
     joules = 0.5 * cal["mass_kg"] * (velocity ** 2)
 
     if impact_type.lower() == "heading":
-        total_kpa = cal["k1_kPa_per_J"] * joules
-        total_ms = cal["k2_ms_per_J"] * joules
+        # Base values from energy
+        base_kpa = cal["k1_kPa_per_J"] * joules
+        base_ms = cal["k2_ms_per_J"] * joules
+
+        # ✅ Apply Phillips moisture amplification (leather = extra effect)
+        total_kpa = base_kpa * cal["pressure_amp"]
+        total_ms = base_ms  # Duration scales with mass/energy; paper reports PPSI amplification
 
         # ✅ PPSI90 — FULL ENERGY METRIC per Phillips et al. (2026): ∫P²dt → Pa²·s
-        peak_pa = total_kpa * 1000  # convert kPa → Pa
-        duration_s = total_ms / 1000  # convert ms → seconds
-        PPSI90_Pa2s = (peak_pa ** 2) * duration_s
+        peak_pa = total_kpa * 1000
+        duration_s = total_ms / 1000
+        PPSI90_Pa2s = (peak_pa ** 2) * duration_s * cal["PPSI_amp"]
 
-        brain_load = total_kpa * total_ms  # BLU = kPa × ms
+        brain_load = total_kpa * total_ms
 
         if brain_load < 45:
             category = "LOW"
@@ -223,14 +281,16 @@ def calculate_impact(velocity_mps: float, impact_type: str,
             "mass_kg": round(cal["mass_kg"], 4),
             "Joules": round(joules, 2),
             "Peak_Pressure_kPa": round(total_kpa, 2),
-            "PPSI90_Time_ms": round(total_ms, 3),  # ✅ Renamed for clarity
-            "PPSI90_Pa2s": round(PPSI90_Pa2s, 1),   # ✅ NEW — full energy metric
+            "PPSI90_Time_ms": round(total_ms, 3),
+            "PPSI90_Pa2s": round(PPSI90_Pa2s, 1),
             "Brain_Load_Units": round(brain_load, 4),
-            "Load_Category": category
+            "Load_Category": category,
+            "Water_Uptake_pct": cal["water_uptake_pct"],
+            "Moisture_Amplification": cal["pressure_amp"] if cal["pressure_amp"] > 1 else "1.00"
         }
 
     elif impact_type.lower() == "kick":
-        kick_cal = KickCalibration.get_kick_constants(cal["mass_kg"], cal["condition"])
+        kick_cal = KickCalibration.get_kick_constants(cal["mass_kg"], cal["mass_mult"])
         peak_force_N = kick_cal["force_per_J_N"] * joules
         contact_time_ms = kick_cal["time_per_J_ms"] * joules
         peak_power_kW = joules / (contact_time_ms / 1000) if contact_time_ms > 0 else 0
@@ -260,18 +320,15 @@ def calculate_impact(velocity_mps: float, impact_type: str,
         }
     return None
 
-
 # =============================================================================
-# CHARTS — UPDATED WITH PPSI90 OPTION
+# CHARTS — UNCHANGED
 # =============================================================================
-
 def generate_head_chart(df: pd.DataFrame) -> tuple:
     df = df.copy()
     df = df.sort_values(["player_name", "Minute"])
     df["Cumulative_Brain_Load"] = df.groupby("player_name")["Brain_Load_Units"].cumsum().round(2)
     df["Cumulative_PPSI90_kPa2s"] = df.groupby("player_name")["PPSI90_Pa2s"].cumsum().round(1)
     df["Player_Label"] = df["player_name"] + " (" + df.groupby("player_name")["player_name"].transform("count").astype(str) + " Headers)"
-
     max_load = df["Cumulative_Brain_Load"].max()
     y_max = max(160, round(max_load * 1.1, -1))
     x_max = max(95, round(df["Minute"].max() + 5, -1))
@@ -329,11 +386,9 @@ def generate_kick_chart(df: pd.DataFrame) -> tuple:
     )
     return fig, df
 
-
 # =============================================================================
-# HTML DOWNLOAD
+# HTML DOWNLOAD — UNCHANGED
 # =============================================================================
-
 def get_html_download_link(fig, filename="Interactive_Chart.html", button_text="📄 Download Interactive Graph"):
     html_content = fig.to_html(include_plotlyjs="cdn", full_html=True)
     b64 = base64.b64encode(html_content.encode()).decode()
@@ -348,11 +403,9 @@ def get_html_download_link(fig, filename="Interactive_Chart.html", button_text="
     '''
     return href
 
-
 # =============================================================================
-# MAIN APPLICATION
+# MAIN APPLICATION — UPDATED CONDITION OPTIONS
 # =============================================================================
-
 def run_application():
     st.set_page_config(page_title="Ball2Head — Dual Impact Engine", layout="wide")
     if "entries" not in st.session_state:
@@ -360,55 +413,53 @@ def run_application():
 
     st.title("⚽🧠 Ball2Head — Dual Impact Engine")
     st.subheader("🧠 Heading Brain Health · ⚽ Kick Shot Power")
-
     st.header("📋 Match Information")
+
     col1, col2 = st.columns(2)
     with col1:
         match_teams = st.text_input("Match", value="Team A vs Team B")
     with col2:
         match_date = st.text_input("Date", value=pd.Timestamp.now().strftime("%Y-%m-%d"))
+
+    st.info("""
+    ✅ **Moisture factors now from Phillips et al. (2026) Table 1 — per-ball-type water uptake.**
+    Leather balls (F1, G1): wet → pressure ×2.77–3.17, PPSI ×8.36–15.19 (paper findings).
+    """)
     st.divider()
 
-    # ─── METHOD 1: CSV UPLOAD — AUTO-FILL MISSING COLUMNS ──────────────
+    # ─── METHOD 1: CSV UPLOAD ──────────────────────────────────────────
     st.header("📁 Method 1: Batch Upload from CSV")
     st.info("""
     ℹ️ **Standard values used where columns missing:**
-    ball_type = **A1** (Thermally Bonded Elite) · ball_size = **Size 5 (Elite Adult)** · condition = **dry**
+    ball_type = **A1** · ball_size = **Size 5 (Elite Adult)** · condition = **dry**
     Required columns: player_name, Minute, ball_velocity_mps, impact_type
-    Output includes: Peak Pressure, PPSI90 Time (ms), PPSI90 (Pa²·s), BLU
+    Output includes: Peak Pressure, PPSI90 Time (ms), PPSI90 (Pa²·s), BLU, Water Uptake %
     """)
 
     uploaded_file = st.file_uploader("Upload Events CSV", type=["csv"])
-
     if uploaded_file:
         df_raw = pd.read_csv(uploaded_file)
-
-        # Smart column detection
         vel_col = next((c for c in df_raw.columns if "vel" in c.lower() or "speed" in c.lower()), None)
         name_col = next((c for c in df_raw.columns if "name" in c.lower() or "player" in c.lower()), None)
         time_col = next((c for c in df_raw.columns if "min" in c.lower() or "time" in c.lower()), None)
         type_col = next((c for c in df_raw.columns if "type" in c.lower() or "impact" in c.lower()), None)
         btype_col = next((c for c in df_raw.columns if "ball_type" in c.lower()), None)
         bsize_col = next((c for c in df_raw.columns if "ball_size" in c.lower()), None)
-        cond_col = next((c for c in df_raw.columns if "cond" in c.lower()), None)
+        cond_col = next((c for c in df_raw.columns if "cond" in c.lower() or "wet" in c.lower() or "dry" in c.lower()), None)
 
         if not all([vel_col, name_col, time_col, type_col]):
-            st.error("❌ Missing required columns! Need at minimum: player_name, Minute, ball_velocity_mps, impact_type")
+            st.error("❌ Missing required columns! Need: player_name, Minute, ball_velocity_mps, impact_type")
             return
 
         results = []
         errors = []
-
         for idx, row in df_raw.iterrows():
             try:
                 itype = str(row[type_col]).lower().strip()
                 vel = float(row[vel_col])
-
-                # Auto-fill missing columns with STANDARD A1 / Size5 / dry
                 btype = str(row[btype_col]).upper().strip() if btype_col else "A1"
                 bsize = str(row[bsize_col]).strip() if bsize_col else "Size 5 (Elite Adult)"
                 cond = str(row[cond_col]).lower().strip() if cond_col else "dry"
-
                 calc = calculate_impact(vel, itype, btype, bsize, cond)
                 if calc:
                     calc["player_name"] = str(row[name_col])
@@ -423,8 +474,7 @@ def run_application():
             st.warning(f"⚠️ {len(errors)} rows skipped — check format")
         if results:
             df_calc = pd.DataFrame(results)
-            st.success(f"✅ {len(df_calc)} impacts calculated — includes PPSI90 (Pa²·s)")
-
+            st.success(f"✅ {len(df_calc)} impacts calculated — moisture factors from Phillips Table 1")
             head_df = df_calc[df_calc["impact_type"] == "heading"].reset_index(drop=True)
             kick_df = df_calc[df_calc["impact_type"] == "kick"].reset_index(drop=True)
 
@@ -467,24 +517,18 @@ def run_application():
                  "D1 — Hand-Stitched Elite",
                  "E1 — Synthetic Moulded",
                  "F1 — Laceless Leather",
-                 "G1 — Laced Leather"],
-                index=0)
-
+                 "G1 — Laced Leather"], index=0)
         with col_b:
             ball_size = st.selectbox("Ball Size",
                 ["Size 5 (Elite Adult)",
                  "Size 4 (U12–U14)",
-                 "Size 3 (U8–U10)"],
-                index=0)
-
+                 "Size 3 (U8–U10)"], index=0)
             velocity = st.number_input("Ball Velocity (m/s)", min_value=5.0, max_value=40.0, step=0.5, value=18.20)
             condition = st.selectbox("Match Condition",
-                ["dry", "damp", "wet_synthetic"],
-                index=0)
-
+                ["dry", "damp", "wet"], index=0)
         with col_c:
             st.markdown("<br>", unsafe_allow_html=True)
-            st.info("✅ Defaults: A1 · Size 5 · dry · Outputs PPSI90 (Pa²·s)")
+            st.info("✅ Moisture from Phillips Table 1 · Leather: pressure amplifies when wet")
             add_btn = st.form_submit_button("➕ Add to Ledger", type="primary", use_container_width=True)
 
         if add_btn:
@@ -498,13 +542,14 @@ def run_application():
                     calc["Minute"] = minute
                     st.session_state.entries.append(calc)
                     if impact_type == "heading":
-                        st.success(f"✅ 🧠 {name} — {btype_id} · {velocity} m/s → {calc['Peak_Pressure_kPa']} kPa | PPSI90: {calc['PPSI90_Pa2s']:,} Pa²·s | {calc['Brain_Load_Units']} BLU")
+                        note = f"💧 Uptake: {calc['Water_Uptake_pct']}%" if calc['condition'] != 'dry' else ""
+                        st.success(f"✅ 🧠 {name} — {btype_id} · {velocity} m/s → {calc['Peak_Pressure_kPa']} kPa | PPSI90: {calc['PPSI90_Pa2s']:,} Pa²·s | {calc['Brain_Load_Units']} BLU {note}")
                     else:
                         st.success(f"✅ ⚽ {name} — {btype_id} · {velocity} m/s → {calc['Peak_Power_kW']} kW | {calc['Performance_Category']}")
                 else:
                     st.error("❌ Invalid input — check all fields")
 
-    # ─── RESULTS ──────────────────────────────────────────────────────
+    # ─── RESULTS LEDGER ───────────────────────────────────────────────
     if st.session_state.entries:
         st.divider()
         st.subheader(f"📊 Full Ledger — {len(st.session_state.entries)} Impact(s)")
